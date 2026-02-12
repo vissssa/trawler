@@ -2,6 +2,28 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+function parseIntWithValidation(
+  value: string | undefined,
+  defaultValue: number,
+  min?: number,
+  max?: number
+): number {
+  const parsed = parseInt(value || String(defaultValue), 10);
+  if (isNaN(parsed)) {
+    console.warn(`Invalid integer value: ${value}, using default: ${defaultValue}`);
+    return defaultValue;
+  }
+  if (min !== undefined && parsed < min) {
+    console.warn(`Value ${parsed} is below minimum ${min}, using default: ${defaultValue}`);
+    return defaultValue;
+  }
+  if (max !== undefined && parsed > max) {
+    console.warn(`Value ${parsed} exceeds maximum ${max}, using default: ${defaultValue}`);
+    return defaultValue;
+  }
+  return parsed;
+}
+
 export const config = {
   env: process.env.NODE_ENV || 'development',
 
@@ -14,12 +36,12 @@ export const config = {
   },
 
   api: {
-    port: parseInt(process.env.API_PORT || '3000', 10),
-    metricsPort: parseInt(process.env.METRICS_PORT || '9090', 10),
+    port: parseIntWithValidation(process.env.API_PORT, 3000, 1024, 65535),
+    metricsPort: parseIntWithValidation(process.env.METRICS_PORT, 9090, 1024, 65535),
   },
 
   worker: {
-    concurrency: parseInt(process.env.WORKER_CONCURRENCY || '3', 10),
+    concurrency: parseIntWithValidation(process.env.WORKER_CONCURRENCY, 3, 1, 100),
   },
 
   leaderElection: {
@@ -34,7 +56,7 @@ export const config = {
   },
 
   task: {
-    maxTimeoutMs: parseInt(process.env.MAX_TASK_TIMEOUT_MS || '7200000', 10),
-    retentionDays: parseInt(process.env.RETENTION_DAYS || '7', 10),
+    maxTimeoutMs: parseIntWithValidation(process.env.MAX_TASK_TIMEOUT_MS, 7200000, 1000),
+    retentionDays: parseIntWithValidation(process.env.RETENTION_DAYS, 7, 1, 365),
   },
 };

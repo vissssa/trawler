@@ -12,4 +12,14 @@ describe('Logger', () => {
     const logger = createLogger('test');
     expect(logger.level).toBe('debug');
   });
+
+  it('应该处理无效的日志级别', () => {
+    process.env.LOG_LEVEL = 'invalid';
+    const logger = createLogger('test');
+    expect(logger.level).toBe('info');
+  });
+
+  afterEach(() => {
+    delete process.env.LOG_LEVEL;
+  });
 });
