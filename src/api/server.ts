@@ -3,6 +3,8 @@ import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { registerTaskRoutes } from './routes';
+import { connectDatabase } from '../services/database';
 
 // 创建并配置 Fastify 实例
 export async function createServer(): Promise<FastifyInstance> {
@@ -60,6 +62,9 @@ export async function createServer(): Promise<FastifyInstance> {
       timestamp: new Date().toISOString(),
     };
   });
+
+  // 注册任务管理路由
+  await registerTaskRoutes(server);
 
   // 全局错误处理
   server.setErrorHandler((error, request, reply) => {
@@ -131,4 +136,22 @@ export async function startServer(server: FastifyInstance): Promise<void> {
     logger.error(`Failed to start server: ${(error as Error).message}`);
     process.exit(1);
   }
+}
+
+// 主入口：如果直接运行此文件，则启动服务器
+if (require.main === module) {
+  (async () => {
+    try {
+      // 连接数据库
+      await connectDatabase();
+      logger.info('Database connected successfully');
+
+      // 创建并启动服务器
+      const server = await createServer();
+      await startServer(server);
+    } catch (error) {
+      logger.error(`Failed to start application: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  })();
 }
