@@ -2,6 +2,9 @@ import { FastifyInstance } from 'fastify';
 import { createServer } from '../../src/api/server';
 import { Task, TaskStatus } from '../../src/models/Task';
 import { getQueueService } from '../../src/services/queue';
+import { existsSync, createReadStream } from 'fs';
+import { stat } from 'fs/promises';
+import archiver from 'archiver';
 
 // Mock dependencies
 jest.mock('../../src/models/Task');
@@ -14,6 +17,9 @@ jest.mock('../../src/config', () => ({
     },
   },
 }));
+jest.mock('fs');
+jest.mock('fs/promises');
+jest.mock('archiver');
 jest.mock('../../src/utils/logger', () => {
   const mockLogger = {
     info: jest.fn(),
@@ -403,6 +409,95 @@ describe('Task Management API', () => {
       const body = JSON.parse(response.body);
       expect(body).toEqual(mockStats);
       expect(mockQueueService.getStats).toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /tasks/:taskId/files', () => {
+    let mockArchive: any;
+
+    beforeEach(() => {
+      mockArchive = {
+        pipe: jest.fn(),
+        file: jest.fn(),
+        finalize: jest.fn().mockResolvedValue(undefined),
+        on: jest.fn(),
+      };
+      (archiver as unknown as jest.Mock).mockReturnValue(mockArchive);
+      (existsSync as jest.Mock).mockReturnValue(true);
+    });
+
+    it('任务不存在时应返回 404', async () => {
+      (Task.findOne as jest.Mock).mockResolvedValue(null);
+
+      const response = await server.inject({
+        method: 'GET',
+        url: '/tasks/nonexistent/files',
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+
+    it('无文件时应返回 404', async () => {
+      const mockTask = {
+        taskId: 'task_empty',
+        status: 'completed',
+        result: { files: [] },
+      };
+      (Task.findOne as jest.Mock).mockResolvedValue(mockTask);
+
+      const response = await server.inject({
+        method: 'GET',
+        url: '/tasks/task_empty/files',
+      });
+
+      expect(response.statusCode).toBe(404);
+      const body = JSON.parse(response.body);
+      expect(body.message).toContain('No files available');
+    });
+
+    it('应该按 type 过滤文件', async () => {
+      const mockTask = {
+        taskId: 'task_filter',
+        status: 'completed',
+        result: {
+          files: [
+            { type: 'html', url: 'https://example.com', path: '/data/a.html', size: 100, mimeType: 'text/html' },
+            { type: 'markdown', url: 'https://example.com', path: '/data/a.md', size: 50, mimeType: 'text/markdown' },
+          ],
+        },
+      };
+      (Task.findOne as jest.Mock).mockResolvedValue(mockTask);
+
+      await server.inject({
+        method: 'GET',
+        url: '/tasks/task_filter/files?type=markdown',
+      });
+
+      // archive.file should only be called once (only markdown file)
+      expect(mockArchive.file).toHaveBeenCalledTimes(1);
+      expect(mockArchive.file).toHaveBeenCalledWith('/data/a.md', { name: 'a.md' });
+    });
+
+    it('默认应该返回 zip 格式', async () => {
+      const mockTask = {
+        taskId: 'task_zip',
+        status: 'completed',
+        result: {
+          files: [
+            { type: 'html', url: 'https://example.com', path: '/data/a.html', size: 100, mimeType: 'text/html' },
+          ],
+        },
+      };
+      (Task.findOne as jest.Mock).mockResolvedValue(mockTask);
+
+      await server.inject({
+        method: 'GET',
+        url: '/tasks/task_zip/files',
+      });
+
+      expect(archiver as unknown as jest.Mock).toHaveBeenCalledWith('zip', { zlib: { level: 6 } });
+      expect(mockArchive.pipe).toHaveBeenCalled();
+      expect(mockArchive.finalize).toHaveBeenCalled();
     });
   });
 });
