@@ -115,4 +115,4 @@ if (require.main === module) {
   });
 }
 
-export { main };
+export { main, processJob };
