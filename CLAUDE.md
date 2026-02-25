@@ -12,7 +12,7 @@ Trawler 是面向大模型知识库的网页爬虫 API 服务，支持静态/动
 ```
 src/
 ├── api/
-│   ├── routes.ts              # API 路由（7个端点）
+│   ├── routes.ts              # API 路由（8个端点）
 │   └── server.ts              # Fastify 服务器配置
 ├── config/
 │   └── index.ts               # 配置管理（环境变量+验证）
@@ -71,7 +71,7 @@ npm run format          # Prettier 格式化
 - Task MongoDB 模型
 - BullMQ 队列服务
 - Leader 选举（Redlock）
-- Fastify 服务器 + 7个 API 端点
+- Fastify 服务器 + 8个 API 端点（含文件下载）
 - 服务器启动修复
 
 ### ✅ 阶段2：Worker 爬虫 + Scheduler 调度
@@ -88,9 +88,9 @@ npm run format          # Prettier 格式化
 - 各服务模块使用命名 logger（database/queue/leader-election/api/api:routes）
 - 端到端验证：API → BullMQ → Worker → Crawlee+Playwright → 文件保存 → MongoDB 更新
 
-### 🔲 阶段3：功能增强（部分完成）
-1. Worker/Scheduler 单元测试（Mock Crawlee、BullMQ、fs）
-2. 文件下载端点（`GET /tasks/:taskId/files`）
+### ✅ 阶段3：功能增强
+1. ~~Worker/Scheduler 单元测试（Mock Crawlee、BullMQ、fs）~~ ✅
+2. ~~文件下载端点（`GET /tasks/:taskId/files`）~~ ✅
 3. ~~修复已有测试问题（API 测试的 Redis mock、路由重复注册）~~ ✅
 4. ~~HTML → Markdown 转换（turndown）~~ ✅
 5. ~~URL 去重（API 层 `new Set` + Worker 层 Crawlee RequestQueue 内建去重）~~ ✅
