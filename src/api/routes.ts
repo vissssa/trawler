@@ -1,4 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { createReadStream, existsSync } from 'fs';
+import { stat } from 'fs/promises';
+import path from 'path';
+import archiver from 'archiver';
 import { Task, TaskStatus, CrawlOptions } from '../models/Task';
 import { getQueueService } from '../services/queue';
 import { createLogger } from '../utils/logger';
@@ -437,4 +441,91 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
       throw error;
     }
   });
+
+  // GET /tasks/:taskId/files - 下载任务文件
+  server.get<{
+    Params: TaskIdParams;
+    Querystring: { type?: string; format?: string };
+  }>(
+    '/tasks/:taskId/files',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          properties: { taskId: { type: 'string' } },
+          required: ['taskId'],
+        },
+        querystring: {
+          type: 'object',
+          properties: {
+            type: { type: 'string', enum: ['html', 'markdown', 'all'], default: 'all' },
+            format: { type: 'string', enum: ['zip', 'single'], default: 'zip' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { taskId } = request.params;
+      const { type = 'all', format = 'zip' } = request.query;
+
+      try {
+        const task = await Task.findOne({ taskId }, 'taskId status result');
+        if (!task) {
+          reply.status(404).send({ error: 'Not Found', message: `Task ${taskId} not found` });
+          return;
+        }
+
+        // Filter files by type
+        let files = task.result?.files || [];
+        if (type !== 'all') {
+          files = files.filter((f) => f.type === type);
+        }
+
+        if (files.length === 0) {
+          reply
+            .status(404)
+            .send({ error: 'Not Found', message: 'No files available for this task' });
+          return;
+        }
+
+        // Single file download
+        if (format === 'single' && files.length === 1) {
+          const file = files[0];
+          if (!existsSync(file.path)) {
+            reply.status(404).send({ error: 'Not Found', message: 'File not found on disk' });
+            return;
+          }
+          const fileStat = await stat(file.path);
+          reply
+            .header('Content-Type', file.mimeType || 'application/octet-stream')
+            .header('Content-Disposition', `attachment; filename="${path.basename(file.path)}"`)
+            .header('Content-Length', fileStat.size);
+          return reply.send(createReadStream(file.path));
+        }
+
+        // Zip download
+        reply
+          .header('Content-Type', 'application/zip')
+          .header('Content-Disposition', `attachment; filename="${taskId}.zip"`);
+
+        const archive = archiver('zip', { zlib: { level: 6 } });
+        archive.on('error', (err) => {
+          logger.error({ taskId, error: err.message }, 'Archive error');
+        });
+
+        archive.pipe(reply.raw);
+
+        for (const file of files) {
+          if (existsSync(file.path)) {
+            archive.file(file.path, { name: path.basename(file.path) });
+          }
+        }
+
+        await archive.finalize();
+      } catch (error) {
+        logger.error(`Failed to download files for ${taskId}: ${(error as Error).message}`);
+        throw error;
+      }
+    }
+  );
 }
