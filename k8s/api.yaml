@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trawler-api
+  labels:
+    app: trawler
+    component: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: trawler
+      component: api
+  template:
+    metadata:
+      labels:
+        app: trawler
+        component: api
+    spec:
+      containers:
+        - name: api
+          image: trawler:latest
+          command: ["node", "dist/api/server.js"]
+          ports:
+            - containerPort: 3000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: trawler-config
+            - secretRef:
+                name: trawler-secret
+          volumeMounts:
+            - name: data
+              mountPath: /app/data/tasks
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: trawler-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trawler-api
+  labels:
+    app: trawler
+    component: api
+spec:
+  type: ClusterIP
+  selector:
+    app: trawler
+    component: api
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http

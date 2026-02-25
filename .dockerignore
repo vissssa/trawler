@@ -1,0 +1,45 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# Runtime data
+data
+logs
+
+# Git
+.git
+.gitignore
+
+# Tests
+tests
+src/**/*.test.ts
+coverage
+jest.config.*
+
+# K8s manifests
+k8s
+
+# IDE / Editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs
+docs
+*.md
+!package.json
+
+# Env
+.env
+.env.*
+
+# Misc
+.dockerignore
+Dockerfile

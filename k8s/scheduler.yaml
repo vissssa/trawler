@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trawler-scheduler
+  labels:
+    app: trawler
+    component: scheduler
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: trawler
+      component: scheduler
+  template:
+    metadata:
+      labels:
+        app: trawler
+        component: scheduler
+    spec:
+      containers:
+        - name: scheduler
+          image: trawler:latest
+          command: ["node", "dist/scheduler/index.js"]
+          env:
+            - name: LOG_FILE
+              value: "scheduler.log"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          envFrom:
+            - configMapRef:
+                name: trawler-config
+            - secretRef:
+                name: trawler-secret
+          volumeMounts:
+            - name: data
+              mountPath: /app/data/tasks
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          livenessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - "process.exit(0)"
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: trawler-data

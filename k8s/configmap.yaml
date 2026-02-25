@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trawler-config
+  labels:
+    app: trawler
+data:
+  NODE_ENV: "production"
+  API_PORT: "3000"
+  WORKER_CONCURRENCY: "3"
+  MAX_TASK_TIMEOUT_MS: "7200000"
+  RETENTION_DAYS: "7"
+  DATA_DIR: "/app/data/tasks"
+  LOG_DIR: "/app/logs"
+  LOG_LEVEL: "info"
+  ENABLE_LEADER_ELECTION: "true"

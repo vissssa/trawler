@@ -10,27 +10,37 @@ Trawler 是面向大模型知识库的网页爬虫 API 服务，支持静态/动
 ## 项目结构
 
 ```
-src/
-├── api/
-│   ├── routes.ts              # API 路由（8个端点）
-│   └── server.ts              # Fastify 服务器配置
-├── config/
-│   └── index.ts               # 配置管理（环境变量+验证）
-├── models/
-│   └── Task.ts                # MongoDB Task 模型
-├── services/
-│   ├── database.ts            # 数据库连接服务
-│   ├── leader-election.ts     # Leader 选举（Redlock）
-│   └── queue.ts               # 任务队列（BullMQ）
-├── utils/
-│   └── logger.ts              # 日志工具（Pino）
-├── worker/
-│   ├── handlers.ts            # Crawlee 页面处理器 + HTML→Markdown 转换
-│   ├── crawler.ts             # PlaywrightCrawler 工厂
-│   └── consumer.ts            # BullMQ Worker 入口
-└── scheduler/
-    ├── cleanup.ts             # 三种清理策略
-    └── index.ts               # Scheduler 入口（Leader 选举 + 定时循环）
+├── .dockerignore                  # Docker 构建排除规则
+├── Dockerfile                     # 三阶段构建（deps → builder → runtime）
+├── k8s/
+│   ├── configmap.yaml             # 非敏感环境变量
+│   ├── secret.yaml                # 敏感配置模板（MongoDB/Redis URL）
+│   ├── pvc.yaml                   # 持久卷（50Gi RWX）
+│   ├── api.yaml                   # API Deployment + ClusterIP Service
+│   ├── worker.yaml                # Worker Deployment
+│   ├── scheduler.yaml             # Scheduler Deployment
+│   └── hpa.yaml                   # HPA（API + Worker 自动扩缩）
+└── src/
+    ├── api/
+    │   ├── routes.ts              # API 路由（8个端点）
+    │   └── server.ts              # Fastify 服务器配置
+    ├── config/
+    │   └── index.ts               # 配置管理（环境变量+验证）
+    ├── models/
+    │   └── Task.ts                # MongoDB Task 模型
+    ├── services/
+    │   ├── database.ts            # 数据库连接服务
+    │   ├── leader-election.ts     # Leader 选举（Redlock）
+    │   └── queue.ts               # 任务队列（BullMQ）
+    ├── utils/
+    │   └── logger.ts              # 日志工具（Pino）
+    ├── worker/
+    │   ├── handlers.ts            # Crawlee 页面处理器 + HTML→Markdown 转换
+    │   ├── crawler.ts             # PlaywrightCrawler 工厂
+    │   └── consumer.ts            # BullMQ Worker 入口
+    └── scheduler/
+        ├── cleanup.ts             # 三种清理策略
+        └── index.ts               # Scheduler 入口（Leader 选举 + 定时循环）
 ```
 
 ## 架构说明
@@ -101,9 +111,9 @@ npm run format          # Prettier 格式化
 5. Prometheus 指标端点（`GET /metrics`）
 6. 结构化错误处理（自定义错误类型）
 
-### 🔲 阶段5：部署与运维
-7. Dockerfile（多阶段构建 + Playwright 预装）
-8. K8s 部署配置（Deployment/Service/PVC/ConfigMap）
+### ✅ 阶段5：部署与运维（部分完成）
+7. ~~Dockerfile（多阶段构建 + Playwright 预装）~~ ✅
+8. ~~K8s 部署配置（Deployment/Service/PVC/ConfigMap/HPA）~~ ✅
 9. CI/CD（GitHub Actions）
 
 ### 🔲 阶段6：高级功能（部分完成）
@@ -118,7 +128,7 @@ npm run format          # Prettier 格式化
 | ~~server.ts lint 错误~~ | ~~高~~ | ✅ 已修复：unused-vars 加 `_` 前缀，`as any` 改用 `FastifyError` 泛型 |
 | ~~API 测试路由重复注册~~ | ~~中~~ | ✅ 已修复：routes.test.ts 移除多余的 registerTaskRoutes 调用 |
 | ~~集成测试需要 MongoDB~~ | ~~中~~ | ✅ 已修复：Task.test.ts 改用 mongodb-memory-server |
-| 配置不可变性 | 低 | config 应 Object.freeze() |
+| ~~配置不可变性~~ | ~~低~~ | ✅ 已修复：config 及嵌套对象均 Object.freeze() |
 
 ## 编码规范
 

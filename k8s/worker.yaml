@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trawler-worker
+  labels:
+    app: trawler
+    component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trawler
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: trawler
+        component: worker
+    spec:
+      containers:
+        - name: worker
+          image: trawler:latest
+          command: ["node", "dist/worker/consumer.js"]
+          env:
+            - name: LOG_FILE
+              value: "worker.log"
+          envFrom:
+            - configMapRef:
+                name: trawler-config
+            - secretRef:
+                name: trawler-secret
+          volumeMounts:
+            - name: data
+              mountPath: /app/data/tasks
+            - name: crawlee-tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          livenessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - "process.exit(0)"
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: trawler-data
+        - name: crawlee-tmp
+          emptyDir:
+            sizeLimit: 5Gi
