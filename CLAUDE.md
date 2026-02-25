@@ -82,6 +82,12 @@ npm run format          # Prettier 格式化
 - Scheduler cleanup：超时/孤儿/过期三种清理策略
 - Scheduler index：Leader 选举 + 5分钟定时循环
 
+### ✅ 阶段2.5：运维优化
+- 日志系统：双输出（控制台 + 文件），每进程一个日志文件（api.log/worker.log/scheduler.log）
+- Leader 选举修复：移除手动 setInterval 续期，改用 Redlock v5 内置 automaticExtensionThreshold
+- 各服务模块使用命名 logger（database/queue/leader-election/api/api:routes）
+- 端到端验证：API → BullMQ → Worker → Crawlee+Playwright → 文件保存 → MongoDB 更新
+
 ### 🔲 阶段3：功能增强（待实现）
 1. Worker/Scheduler 单元测试（Mock Crawlee、BullMQ、fs）
 2. 文件下载端点（`GET /tasks/:taskId/files`）

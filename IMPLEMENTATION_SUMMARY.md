@@ -95,9 +95,10 @@ trawler/
 
 ### 2. 日志系统 (`src/utils/logger.ts`)
 - 基于 Pino 的高性能日志
-- 环境感知（开发环境 pino-pretty，生产环境 JSON）
-- 日志级别验证
-- 支持 `createLogger(name)` 创建命名日志器
+- 双输出：控制台（pino-pretty）+ 文件（singleLine 格式）
+- 每进程一个日志文件：api.log / worker.log / scheduler.log
+- 各模块使用命名 logger（database/queue/leader-election/api/api:routes）
+- 日志级别通过 `LOG_LEVEL` 环境变量配置
 
 ### 3. Task 模型 (`src/models/Task.ts`)
 - 完整的 MongoDB Schema，含 TaskStatus 枚举（PENDING, RUNNING, COMPLETED, FAILED, TIMEOUT）
@@ -112,8 +113,8 @@ trawler/
 - 队列统计、暂停/恢复、事件监听
 
 ### 5. Leader 选举 (`src/services/leader-election.ts`)
-- 基于 Redlock 的分布式锁，TTL 10s
-- 自动续期（每 5s）
+- 基于 Redlock 的分布式锁，TTL 60s
+- 使用 Redlock v5 内置 `automaticExtensionThreshold` 自动续期
 - Leader 故障自动转移
 - 优雅释放
 
@@ -305,4 +306,4 @@ npm run format          # Prettier 格式化
 
 **最后更新：** 2026-02-25
 **版本：** 0.2.0
-**状态：** 核心功能已完成（API + Worker + Scheduler），待集成测试验证端到端流程
+**状态：** 核心功能已完成（API + Worker + Scheduler），端到端流程已验证通过
