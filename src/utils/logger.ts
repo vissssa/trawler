@@ -50,18 +50,24 @@ export function createLogger(name: string) {
               level: logLevel,
             },
         // 文件输出（同一进程所有模块写入同一文件）
-        {
-          target: 'pino-pretty',
-          options: {
-            colorize: false,
-            translateTime: 'SYS:standard',
-            ignore: 'pid,hostname',
-            singleLine: true,
-            destination: logFile,
-            mkdir: true,
-          },
-          level: logLevel,
-        },
+        process.env.NODE_ENV === 'development'
+          ? {
+              target: 'pino-pretty',
+              options: {
+                colorize: false,
+                translateTime: 'SYS:standard',
+                ignore: 'pid,hostname',
+                singleLine: true,
+                destination: logFile,
+                mkdir: true,
+              },
+              level: logLevel,
+            }
+          : {
+              target: 'pino/file',
+              options: { destination: logFile, mkdir: true },
+              level: logLevel,
+            },
       ],
     },
   });

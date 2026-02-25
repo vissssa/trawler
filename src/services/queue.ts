@@ -163,6 +163,7 @@ export class QueueService {
     await this.queue.close();
     await this.queueEvents.close();
     await this.connection.quit();
+    queueServiceInstance = null;
     logger.info('Queue service closed');
   }
 }

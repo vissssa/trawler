@@ -30,6 +30,10 @@ describe('consumer', () => {
     it('成功时应将任务标记为 COMPLETED', async () => {
       const mockCrawler = { run: jest.fn().mockResolvedValue(undefined) };
       (createCrawler as jest.Mock).mockReturnValue(mockCrawler);
+      // After crawler.run, findOne is called to check progress
+      (Task.findOne as jest.Mock).mockResolvedValue({
+        progress: { completed: 1, failed: 0 },
+      });
 
       const mockJob = {
         data: {
@@ -37,7 +41,9 @@ describe('consumer', () => {
           urls: ['https://example.com'],
           options: { maxDepth: 2 },
         },
-      } as Job<any>;
+        attemptsMade: 0,
+        opts: { attempts: 3 },
+      } as unknown as Job<any>;
 
       await processJob(mockJob);
 
@@ -54,7 +60,38 @@ describe('consumer', () => {
       expect(mockCrawler.run).toHaveBeenCalledWith(['https://example.com']);
     });
 
-    it('失败时应将任务标记为 FAILED 并重新抛出错误', async () => {
+    it('所有页面失败时应标记为 FAILED', async () => {
+      const mockCrawler = { run: jest.fn().mockResolvedValue(undefined) };
+      (createCrawler as jest.Mock).mockReturnValue(mockCrawler);
+      (Task.findOne as jest.Mock).mockResolvedValue({
+        progress: { completed: 0, failed: 3 },
+      });
+
+      const mockJob = {
+        data: {
+          taskId: 'task_all_fail',
+          urls: ['https://a.com', 'https://b.com', 'https://c.com'],
+          options: {},
+        },
+        attemptsMade: 0,
+        opts: { attempts: 3 },
+      } as unknown as Job<any>;
+
+      await processJob(mockJob);
+
+      expect(Task.updateOne).toHaveBeenCalledWith(
+        { taskId: 'task_all_fail' },
+        {
+          $set: {
+            status: TaskStatus.FAILED,
+            completedAt: expect.any(Date),
+            errorMessage: 'All 3 pages failed',
+          },
+        }
+      );
+    });
+
+    it('最后一次重试失败时应将任务标记为 FAILED', async () => {
       const crawlError = new Error('Browser crashed');
       const mockCrawler = { run: jest.fn().mockRejectedValue(crawlError) };
       (createCrawler as jest.Mock).mockReturnValue(mockCrawler);
@@ -65,7 +102,9 @@ describe('consumer', () => {
           urls: ['https://example.com'],
           options: {},
         },
-      } as Job<any>;
+        attemptsMade: 2, // 3rd attempt (0-indexed), final with attempts:3
+        opts: { attempts: 3 },
+      } as unknown as Job<any>;
 
       await expect(processJob(mockJob)).rejects.toThrow('Browser crashed');
 
@@ -79,6 +118,64 @@ describe('consumer', () => {
           },
         }
       );
+    });
+
+    it('非最后一次重试失败时不应标记为 FAILED', async () => {
+      const crawlError = new Error('Temporary error');
+      const mockCrawler = { run: jest.fn().mockRejectedValue(crawlError) };
+      (createCrawler as jest.Mock).mockReturnValue(mockCrawler);
+
+      const mockJob = {
+        data: {
+          taskId: 'task_retry',
+          urls: ['https://example.com'],
+          options: {},
+        },
+        attemptsMade: 0, // 1st attempt, still has retries
+        opts: { attempts: 3 },
+      } as unknown as Job<any>;
+
+      await expect(processJob(mockJob)).rejects.toThrow('Temporary error');
+
+      // Should have set RUNNING but NOT FAILED
+      const updateCalls = (Task.updateOne as jest.Mock).mock.calls;
+      expect(updateCalls).toHaveLength(1); // Only the RUNNING update
+      expect(updateCalls[0][1].$set.status).toBe(TaskStatus.RUNNING);
+    });
+
+    it('重试时应重置 progress 和 result', async () => {
+      const mockCrawler = { run: jest.fn().mockResolvedValue(undefined) };
+      (createCrawler as jest.Mock).mockReturnValue(mockCrawler);
+      (Task.findOne as jest.Mock).mockResolvedValue({
+        progress: { completed: 1, failed: 0 },
+      });
+
+      const mockJob = {
+        data: {
+          taskId: 'task_retry2',
+          urls: ['https://example.com'],
+          options: {},
+        },
+        attemptsMade: 1, // 2nd attempt = retry
+        opts: { attempts: 3 },
+      } as unknown as Job<any>;
+
+      await processJob(mockJob);
+
+      // First call on retry: reset progress and result
+      const firstCall = (Task.updateOne as jest.Mock).mock.calls[0];
+      expect(firstCall[1].$set.status).toBe(TaskStatus.RUNNING);
+      expect(firstCall[1].$set.progress).toEqual({
+        completed: 0,
+        total: 1,
+        failed: 0,
+        currentUrl: '',
+      });
+      expect(firstCall[1].$set.result).toEqual({
+        files: [],
+        errors: [],
+        stats: { success: 0, failed: 0 },
+      });
     });
   });
 });

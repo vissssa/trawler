@@ -138,7 +138,16 @@ export function createRequestHandler(taskId: string, options: CrawlOptions = {})
 
     // Enqueue discovered links (same-domain only)
     const enqueuedInfo = await enqueueLinks({ strategy: 'same-domain' });
-    logger.debug({ taskId, url, enqueued: enqueuedInfo.processedRequests.length }, 'Enqueued links');
+    const newlyEnqueued = enqueuedInfo.processedRequests.filter(
+      (r) => r.wasAlreadyPresent === false
+    ).length;
+
+    // Update progress.total to account for newly discovered URLs
+    if (newlyEnqueued > 0) {
+      await Task.updateOne({ taskId }, { $inc: { 'progress.total': newlyEnqueued } });
+    }
+
+    logger.debug({ taskId, url, enqueued: newlyEnqueued }, 'Enqueued links');
   };
 }
 

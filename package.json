@@ -28,7 +28,6 @@
   "dependencies": {
     "@fastify/cors": "^11.2.0",
     "@fastify/multipart": "^9.4.0",
-    "@types/turndown": "^5.0.6",
     "archiver": "^7.0.1",
     "bullmq": "^5.68.0",
     "cheerio": "^1.2.0",
@@ -47,6 +46,7 @@
     "@types/cheerio": "^0.22.35",
     "@types/jest": "^30.0.0",
     "@types/node": "^25.2.3",
+    "@types/turndown": "^5.0.6",
     "@typescript-eslint/eslint-plugin": "^8.55.0",
     "@typescript-eslint/parser": "^8.55.0",
     "eslint": "^9.39.2",

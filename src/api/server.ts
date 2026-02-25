@@ -3,6 +3,7 @@ process.env.LOG_FILE = process.env.LOG_FILE || 'api.log';
 import Fastify, { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
+import mongoose from 'mongoose';
 import { config } from '../config';
 import { createLogger } from '../utils/logger';
 
@@ -59,11 +60,20 @@ export async function createServer(): Promise<FastifyInstance> {
   });
 
   // 就绪检查端点
-  server.get('/ready', async (_request: FastifyRequest, _reply: FastifyReply) => {
-    // TODO: 添加数据库连接检查等
+  server.get('/ready', async (_request: FastifyRequest, reply: FastifyReply) => {
+    const dbReady = mongoose.connection.readyState === 1;
+    if (!dbReady) {
+      reply.status(503).send({
+        status: 'not ready',
+        timestamp: new Date().toISOString(),
+        checks: { database: false },
+      });
+      return;
+    }
     return {
       status: 'ready',
       timestamp: new Date().toISOString(),
+      checks: { database: true },
     };
   });
 

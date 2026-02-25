@@ -1,5 +1,9 @@
 import { FastifyInstance } from 'fastify';
+import mongoose from 'mongoose';
 import { createServer } from '../../src/api/server';
+
+// Set mongoose readyState to 1 (connected) for /ready endpoint test
+Object.defineProperty(mongoose.connection, 'readyState', { value: 1, writable: true });
 
 // Mock config
 jest.mock('../../src/config', () => ({

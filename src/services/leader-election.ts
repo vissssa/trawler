@@ -47,6 +47,12 @@ export class LeaderElectionService {
         logger.debug(`Redlock contention: ${error.message}`);
       } else {
         logger.warn(`Redlock error: ${error.message}`);
+        // Lock extension failure — reset leader status to prevent split-brain
+        if (this.isLeader) {
+          logger.warn('Resetting leader status due to Redlock error');
+          this.isLeader = false;
+          this.currentLock = null;
+        }
       }
     });
   }
@@ -122,6 +128,7 @@ export class LeaderElectionService {
   async close(): Promise<void> {
     await this.releaseLeadership();
     await this.redis.quit();
+    leaderElectionServiceInstance = null;
     logger.info('Leader election service closed');
   }
 }

@@ -7,9 +7,9 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 
-# Install production deps only; allow postinstall scripts so
-# Playwright can download browser binaries into node_modules
-RUN npm ci --omit=dev
+# Install production deps only; skip Playwright browser download
+# (runtime stage uses the official Playwright image with pre-installed browsers)
+RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci --omit=dev
 
 # ============================================================
 # Stage 2: Build TypeScript

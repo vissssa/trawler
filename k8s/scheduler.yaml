@@ -17,6 +17,10 @@ spec:
         app: trawler
         component: scheduler
     spec:
+      securityContext:
+        runAsUser: 601
+        runAsGroup: 601
+        runAsNonRoot: true
       containers:
         - name: scheduler
           image: trawler:latest
@@ -46,9 +50,9 @@ spec:
           livenessProbe:
             exec:
               command:
-                - node
-                - -e
-                - "process.exit(0)"
+                - /bin/sh
+                - -c
+                - "pgrep -f 'node dist/scheduler/index.js' > /dev/null"
             initialDelaySeconds: 10
             periodSeconds: 30
             timeoutSeconds: 5

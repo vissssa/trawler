@@ -2,6 +2,7 @@ process.env.LOG_FILE = process.env.LOG_FILE || 'worker.log';
 
 import { Worker, Job } from 'bullmq';
 import Redis from 'ioredis';
+import { rm } from 'fs/promises';
 import { config } from '../config';
 import { connectDatabase } from '../services/database';
 import { Task, TaskStatus } from '../models/Task';
@@ -15,42 +16,82 @@ const QUEUE_NAME = 'crawl-tasks';
 
 async function processJob(job: Job<CrawlJobData>): Promise<void> {
   const { taskId, urls, options } = job.data;
-  logger.info({ taskId, urls: urls.length }, 'Processing crawl job');
+  logger.info({ taskId, urls: urls.length, attempt: job.attemptsMade + 1 }, 'Processing crawl job');
 
-  // Update task status to RUNNING
-  await Task.updateOne(
-    { taskId },
-    { $set: { status: TaskStatus.RUNNING, startedAt: new Date() } }
-  );
+  // On retry, reset progress/result to avoid duplicate accumulation
+  if (job.attemptsMade > 0) {
+    await Task.updateOne(
+      { taskId },
+      {
+        $set: {
+          status: TaskStatus.RUNNING,
+          progress: { completed: 0, total: urls.length, failed: 0, currentUrl: '' },
+          result: { files: [], errors: [], stats: { success: 0, failed: 0 } },
+        },
+      }
+    );
+  } else {
+    // First attempt: set status to RUNNING
+    await Task.updateOne(
+      { taskId },
+      { $set: { status: TaskStatus.RUNNING, startedAt: new Date() } }
+    );
+  }
 
   try {
     const crawler = createCrawler(taskId, options);
     await crawler.run(urls);
 
-    // Mark as COMPLETED
-    await Task.updateOne(
-      { taskId },
-      { $set: { status: TaskStatus.COMPLETED, completedAt: new Date() } }
-    );
+    // Check if there were failures during crawl
+    const task = await Task.findOne({ taskId }, 'progress');
+    const failedCount = task?.progress?.failed || 0;
+    const completedCount = task?.progress?.completed || 0;
 
-    logger.info({ taskId }, 'Crawl job completed');
+    if (completedCount === 0 && failedCount > 0) {
+      // All pages failed
+      await Task.updateOne(
+        { taskId },
+        {
+          $set: {
+            status: TaskStatus.FAILED,
+            completedAt: new Date(),
+            errorMessage: `All ${failedCount} pages failed`,
+          },
+        }
+      );
+    } else {
+      await Task.updateOne(
+        { taskId },
+        { $set: { status: TaskStatus.COMPLETED, completedAt: new Date() } }
+      );
+    }
+
+    logger.info({ taskId, completedCount, failedCount }, 'Crawl job completed');
   } catch (error) {
     const errorMessage = (error as Error).message;
-    logger.error({ taskId, error: errorMessage }, 'Crawl job failed');
+    logger.error({ taskId, error: errorMessage, attempt: job.attemptsMade + 1 }, 'Crawl job failed');
 
-    // Mark as FAILED
-    await Task.updateOne(
-      { taskId },
-      {
-        $set: {
-          status: TaskStatus.FAILED,
-          completedAt: new Date(),
-          errorMessage,
-        },
-      }
-    );
+    const maxAttempts = (job.opts?.attempts ?? 1);
+    const isFinalAttempt = job.attemptsMade + 1 >= maxAttempts;
+
+    if (isFinalAttempt) {
+      // Only mark FAILED on the final attempt
+      await Task.updateOne(
+        { taskId },
+        {
+          $set: {
+            status: TaskStatus.FAILED,
+            completedAt: new Date(),
+            errorMessage,
+          },
+        }
+      );
+    }
 
     throw error;
+  } finally {
+    // Clean up Crawlee temporary storage
+    await rm(`/tmp/crawlee-${taskId}`, { recursive: true, force: true }).catch(() => {});
   }
 }
 

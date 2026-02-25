@@ -1,10 +1,11 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createReadStream, existsSync } from 'fs';
-import { stat } from 'fs/promises';
+import { stat, rm } from 'fs/promises';
 import path from 'path';
 import archiver from 'archiver';
 import { Task, TaskStatus, CrawlOptions } from '../models/Task';
 import { getQueueService } from '../services/queue';
+import { config } from '../config';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('api:routes');
@@ -137,6 +138,9 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
               result: { type: 'object' },
               createdAt: { type: 'string' },
               updatedAt: { type: 'string' },
+              startedAt: { type: 'string', nullable: true },
+              completedAt: { type: 'string', nullable: true },
+              errorMessage: { type: 'string', nullable: true },
             },
           },
         },
@@ -207,6 +211,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
                     taskId: { type: 'string' },
                     urls: { type: 'array', items: { type: 'string' } },
                     status: { type: 'string' },
+                    progress: { type: 'object' },
                     createdAt: { type: 'string' },
                   },
                 },
@@ -221,8 +226,8 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
     },
     async (request, reply: FastifyReply) => {
       const { status, limit = '10', offset = '0' } = request.query;
-      const limitNum = parseInt(limit, 10);
-      const offsetNum = parseInt(offset, 10);
+      const limitNum = Math.min(parseInt(limit, 10) || 10, 100);
+      const offsetNum = parseInt(offset, 10) || 0;
 
       try {
         const query = status ? { status } : {};
@@ -302,6 +307,19 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
         }
 
         if (status) {
+          // Validate state transitions — only allow cancelling pending/running tasks
+          const allowedTransitions: Record<string, string[]> = {
+            [TaskStatus.PENDING]: [TaskStatus.FAILED],
+            [TaskStatus.RUNNING]: [TaskStatus.FAILED],
+          };
+          const allowed = allowedTransitions[task.status];
+          if (!allowed || !allowed.includes(status)) {
+            reply.status(400).send({
+              error: 'Bad Request',
+              message: `Cannot transition from '${task.status}' to '${status}'`,
+            });
+            return;
+          }
           task.status = status;
         }
 
@@ -358,6 +376,14 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
 
         // 从队列中移除
         await queueService.removeJob(taskId);
+
+        // 删除磁盘上的爬取文件
+        const taskDir = path.join(config.storage.dataDir, taskId);
+        try {
+          await rm(taskDir, { recursive: true, force: true });
+        } catch {
+          // ignore if directory doesn't exist
+        }
 
         // 删除任务文档
         await Task.deleteOne({ taskId });
@@ -496,24 +522,24 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
             return;
           }
           const fileStat = await stat(file.path);
+          const fileName = path.basename(file.path).replace(/"/g, '\\"');
           reply
             .header('Content-Type', file.mimeType || 'application/octet-stream')
-            .header('Content-Disposition', `attachment; filename="${path.basename(file.path)}"`)
+            .header('Content-Disposition', `attachment; filename="${fileName}"`)
             .header('Content-Length', fileStat.size);
           return reply.send(createReadStream(file.path));
         }
 
-        // Zip download
-        reply
-          .header('Content-Type', 'application/zip')
-          .header('Content-Disposition', `attachment; filename="${taskId}.zip"`);
-
+        // Zip download — collect into buffer and send via Fastify reply
         const archive = archiver('zip', { zlib: { level: 6 } });
-        archive.on('error', (err) => {
-          logger.error({ taskId, error: err.message }, 'Archive error');
-        });
 
-        archive.pipe(reply.raw);
+        const chunks: Buffer[] = [];
+        archive.on('data', (chunk: Buffer) => chunks.push(chunk));
+
+        const archiveFinished = new Promise<Buffer>((resolve, reject) => {
+          archive.on('end', () => resolve(Buffer.concat(chunks)));
+          archive.on('error', reject);
+        });
 
         for (const file of files) {
           if (existsSync(file.path)) {
@@ -522,6 +548,13 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
         }
 
         await archive.finalize();
+        const zipBuffer = await archiveFinished;
+
+        return reply
+          .header('Content-Type', 'application/zip')
+          .header('Content-Disposition', `attachment; filename="${taskId}.zip"`)
+          .header('Content-Length', zipBuffer.length)
+          .send(zipBuffer);
       } catch (error) {
         logger.error(`Failed to download files for ${taskId}: ${(error as Error).message}`);
         throw error;

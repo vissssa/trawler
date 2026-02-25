@@ -106,11 +106,10 @@ export async function cleanupExpiredTasks(): Promise<number> {
 export async function runAllCleanups(): Promise<void> {
   logger.info('Running all cleanup strategies...');
 
-  const [timedOut, orphaned, expired] = await Promise.all([
-    cleanupTimedOutTasks(),
-    cleanupOrphanedTasks(),
-    cleanupExpiredTasks(),
-  ]);
+  // Run sequentially to avoid timeout/orphan query overlap on the same RUNNING tasks
+  const timedOut = await cleanupTimedOutTasks();
+  const orphaned = await cleanupOrphanedTasks();
+  const expired = await cleanupExpiredTasks();
 
   logger.info({ timedOut, orphaned, expired }, 'Cleanup complete');
 }

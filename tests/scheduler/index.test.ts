@@ -1,8 +1,14 @@
 jest.mock('../../src/services/database', () => ({
   connectDatabase: jest.fn().mockResolvedValue(undefined),
+  disconnectDatabase: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../src/services/leader-election');
 jest.mock('../../src/scheduler/cleanup');
+jest.mock('../../src/config', () => ({
+  config: {
+    leaderElection: { enabled: true },
+  },
+}));
 jest.mock('../../src/utils/logger', () => {
   const mockLogger = { info: jest.fn(), error: jest.fn(), debug: jest.fn(), warn: jest.fn() };
   return { createLogger: jest.fn(() => mockLogger), logger: mockLogger };
@@ -44,6 +50,11 @@ describe('scheduler runOneCycle', () => {
       .mockReturnValueOnce(true);   // after acquire: is leader
     await runOneCycle(mockLeaderService);
     expect(mockLeaderService.acquireLeadership).toHaveBeenCalled();
+    expect(runAllCleanups).toHaveBeenCalled();
+  });
+
+  it('leaderService 为 null 时应直接运行清理', async () => {
+    await runOneCycle(null);
     expect(runAllCleanups).toHaveBeenCalled();
   });
 });

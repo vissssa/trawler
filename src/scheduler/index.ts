@@ -1,6 +1,7 @@
 process.env.LOG_FILE = process.env.LOG_FILE || 'scheduler.log';
 
-import { connectDatabase } from '../services/database';
+import { connectDatabase, disconnectDatabase } from '../services/database';
+import { config } from '../config';
 import { getLeaderElectionService } from '../services/leader-election';
 import { runAllCleanups } from './cleanup';
 import { createLogger } from '../utils/logger';
@@ -10,8 +11,14 @@ const logger = createLogger('scheduler');
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 async function runOneCycle(
-  leaderService: ReturnType<typeof getLeaderElectionService>
+  leaderService: ReturnType<typeof getLeaderElectionService> | null
 ): Promise<void> {
+  // If leader election is disabled, always run cleanup
+  if (!leaderService) {
+    await runAllCleanups();
+    return;
+  }
+
   if (!leaderService.isCurrentLeader()) {
     await leaderService.acquireLeadership();
   }
@@ -29,11 +36,15 @@ async function main(): Promise<void> {
   // Connect to MongoDB
   await connectDatabase();
 
-  // Get leader election service
-  const leaderService = getLeaderElectionService();
-
-  // Try to acquire leadership
-  await leaderService.acquireLeadership();
+  // Get leader election service (only if enabled)
+  let leaderService: ReturnType<typeof getLeaderElectionService> | null = null;
+  if (config.leaderElection.enabled) {
+    leaderService = getLeaderElectionService();
+    await leaderService.acquireLeadership();
+    logger.info('Leader election enabled');
+  } else {
+    logger.info('Leader election disabled, running as standalone scheduler');
+  }
 
   let running = true;
 
@@ -41,7 +52,14 @@ async function main(): Promise<void> {
   const shutdown = async () => {
     logger.info('Shutting down scheduler...');
     running = false;
-    await leaderService.close();
+    try {
+      if (leaderService) {
+        await leaderService.close();
+      }
+      await disconnectDatabase();
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Error during shutdown');
+    }
     process.exit(0);
   };
 

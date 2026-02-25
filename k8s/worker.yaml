@@ -17,6 +17,10 @@ spec:
         app: trawler
         component: worker
     spec:
+      securityContext:
+        runAsUser: 601
+        runAsGroup: 601
+        runAsNonRoot: true
       containers:
         - name: worker
           image: trawler:latest
@@ -44,9 +48,9 @@ spec:
           livenessProbe:
             exec:
               command:
-                - node
-                - -e
-                - "process.exit(0)"
+                - /bin/sh
+                - -c
+                - "pgrep -f 'node dist/worker/consumer.js' > /dev/null"
             initialDelaySeconds: 15
             periodSeconds: 30
             timeoutSeconds: 5

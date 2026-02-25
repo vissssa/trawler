@@ -37,13 +37,17 @@ export function createCrawler(taskId: string, options: CrawlOptions): Playwright
       if (options.auth) {
         switch (options.auth.type) {
           case 'basic': {
-            const { username, password } = options.auth.credentials;
+            const username = options.auth.credentials.username || '';
+            const password = options.auth.credentials.password || '';
             const encoded = Buffer.from(`${username}:${password}`).toString('base64');
             extraHeaders['Authorization'] = `Basic ${encoded}`;
             break;
           }
           case 'bearer': {
-            extraHeaders['Authorization'] = `Bearer ${options.auth.credentials.token}`;
+            const token = options.auth.credentials.token;
+            if (token) {
+              extraHeaders['Authorization'] = `Bearer ${token}`;
+            }
             break;
           }
           case 'cookie': {
@@ -66,7 +70,7 @@ export function createCrawler(taskId: string, options: CrawlOptions): Playwright
 
   // Compute maxRequestsPerMinute from rateLimit
   let maxRequestsPerMinute: number | undefined;
-  if (options.rateLimit) {
+  if (options.rateLimit && options.rateLimit.perSeconds > 0) {
     maxRequestsPerMinute = Math.floor(
       (options.rateLimit.maxRequests / options.rateLimit.perSeconds) * 60
     );
@@ -78,7 +82,6 @@ export function createCrawler(taskId: string, options: CrawlOptions): Playwright
       failedRequestHandler: createFailedRequestHandler(taskId),
       maxCrawlDepth: options.maxDepth,
       maxRequestsPerCrawl: options.maxPages,
-      navigationTimeoutSecs: options.timeout ? Math.floor(options.timeout / 1000) : undefined,
       maxRequestsPerMinute,
       maxConcurrency: config.worker.concurrency,
       preNavigationHooks,

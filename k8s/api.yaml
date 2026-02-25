@@ -17,6 +17,10 @@ spec:
         app: trawler
         component: api
     spec:
+      securityContext:
+        runAsUser: 601
+        runAsGroup: 601
+        runAsNonRoot: true
       containers:
         - name: api
           image: trawler:latest

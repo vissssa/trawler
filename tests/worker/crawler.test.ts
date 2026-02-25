@@ -42,17 +42,15 @@ describe('createCrawler', () => {
     });
   });
 
-  it('应该映射 maxDepth/maxPages/timeout 选项', () => {
+  it('应该映射 maxDepth/maxPages 选项', () => {
     createCrawler('task_2', {
       maxDepth: 5,
       maxPages: 100,
-      timeout: 60000,
     });
 
     const crawlerOpts = MockPlaywrightCrawler.mock.calls[0][0];
     expect(crawlerOpts?.maxCrawlDepth).toBe(5);
     expect(crawlerOpts?.maxRequestsPerCrawl).toBe(100);
-    expect(crawlerOpts?.navigationTimeoutSecs).toBe(60);
   });
 
   it('应该计算 maxRequestsPerMinute', () => {

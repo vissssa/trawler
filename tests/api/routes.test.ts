@@ -15,6 +15,9 @@ jest.mock('../../src/config', () => ({
     api: {
       port: 3001,
     },
+    storage: {
+      dataDir: '/tmp/test-data',
+    },
   },
 }));
 jest.mock('fs');
@@ -267,7 +270,7 @@ describe('Task Management API', () => {
   });
 
   describe('PATCH /tasks/:taskId', () => {
-    it('should update task status', async () => {
+    it('should update task status with valid transition', async () => {
       const mockTask = {
         taskId: 'task_123',
         status: TaskStatus.PENDING,
@@ -281,15 +284,39 @@ describe('Task Management API', () => {
         method: 'PATCH',
         url: '/tasks/task_123',
         payload: {
-          status: TaskStatus.RUNNING,
+          status: TaskStatus.FAILED,
         },
       });
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       expect(body.taskId).toBe('task_123');
-      expect(body.status).toBe(TaskStatus.RUNNING);
+      expect(body.status).toBe(TaskStatus.FAILED);
       expect(mockTask.save).toHaveBeenCalled();
+    });
+
+    it('should reject invalid state transition', async () => {
+      const mockTask = {
+        taskId: 'task_123',
+        status: TaskStatus.COMPLETED,
+        updatedAt: new Date(),
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      (Task.findOne as jest.Mock).mockResolvedValue(mockTask);
+
+      const response = await server.inject({
+        method: 'PATCH',
+        url: '/tasks/task_123',
+        payload: {
+          status: TaskStatus.PENDING,
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+      const body = JSON.parse(response.body);
+      expect(body.message).toContain('Cannot transition');
+      expect(mockTask.save).not.toHaveBeenCalled();
     });
 
     it('should return 404 for non-existent task', async () => {
@@ -299,7 +326,7 @@ describe('Task Management API', () => {
         method: 'PATCH',
         url: '/tasks/nonexistent',
         payload: {
-          status: TaskStatus.RUNNING,
+          status: TaskStatus.FAILED,
         },
       });
 
@@ -416,11 +443,23 @@ describe('Task Management API', () => {
     let mockArchive: any;
 
     beforeEach(() => {
+      const eventHandlers: Record<string, Function> = {};
       mockArchive = {
-        pipe: jest.fn(),
         file: jest.fn(),
-        finalize: jest.fn().mockResolvedValue(undefined),
-        on: jest.fn(),
+        finalize: jest.fn().mockImplementation(() => {
+          // Simulate archiver emitting data then end
+          if (eventHandlers['data']) {
+            eventHandlers['data'](Buffer.from('PK mock zip'));
+          }
+          if (eventHandlers['end']) {
+            eventHandlers['end']();
+          }
+          return Promise.resolve();
+        }),
+        on: jest.fn().mockImplementation((event: string, handler: Function) => {
+          eventHandlers[event] = handler;
+          return mockArchive;
+        }),
       };
       (archiver as unknown as jest.Mock).mockReturnValue(mockArchive);
       (existsSync as jest.Mock).mockReturnValue(true);
@@ -496,7 +535,6 @@ describe('Task Management API', () => {
       });
 
       expect(archiver as unknown as jest.Mock).toHaveBeenCalledWith('zip', { zlib: { level: 6 } });
-      expect(mockArchive.pipe).toHaveBeenCalled();
       expect(mockArchive.finalize).toHaveBeenCalled();
     });
   });
