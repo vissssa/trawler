@@ -1,7 +1,9 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { Task, TaskStatus, CrawlOptions } from '../models/Task';
 import { getQueueService } from '../services/queue';
-import { logger } from '../utils/logger';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('api:routes');
 
 // 请求类型定义
 interface CreateTaskBody {

@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import { config } from '../config';
-import { logger } from '../utils/logger';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('database');
 
 export async function connectDatabase(): Promise<void> {
   try {

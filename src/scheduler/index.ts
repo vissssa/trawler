@@ -1,3 +1,5 @@
+process.env.LOG_FILE = process.env.LOG_FILE || 'scheduler.log';
+
 import { connectDatabase } from '../services/database';
 import { getLeaderElectionService } from '../services/leader-election';
 import { runAllCleanups } from './cleanup';

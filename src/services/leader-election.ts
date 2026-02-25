@@ -1,7 +1,9 @@
 import Redlock, { Lock } from 'redlock';
 import Redis from 'ioredis';
 import { config } from '../config';
-import { logger } from '../utils/logger';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('leader-election');
 
 // Leader选举服务类
 export class LeaderElectionService {
@@ -12,7 +14,6 @@ export class LeaderElectionService {
   private lockKey: string;
   private lockTTL: number;
   private podName: string;
-  private renewalInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     this.lockKey = config.leaderElection.lockKey;
@@ -25,12 +26,14 @@ export class LeaderElectionService {
     });
 
     // 创建 Redlock 实例
+    // automaticExtensionThreshold: 当锁剩余时间小于此值时自动续期
+    // 设为 lockTTL / 2，确保在锁过期前充分续期
     this.redlock = new Redlock([this.redis], {
       driftFactor: 0.01,
-      retryCount: 10,
+      retryCount: 3,
       retryDelay: 200,
       retryJitter: 200,
-      automaticExtensionThreshold: 500,
+      automaticExtensionThreshold: this.lockTTL / 2,
     });
 
     this.setupEventHandlers();
@@ -39,21 +42,23 @@ export class LeaderElectionService {
   // 设置事件处理器
   private setupEventHandlers(): void {
     this.redlock.on('error', (error) => {
-      logger.error(`Redlock error: ${error.message}`);
+      // 忽略获取锁失败的重试错误（正常竞争行为）
+      if (error.message.includes('The operation was unable to achieve a quorum')) {
+        logger.debug(`Redlock contention: ${error.message}`);
+      } else {
+        logger.warn(`Redlock error: ${error.message}`);
+      }
     });
   }
 
   // 尝试获取leader锁
   async acquireLeadership(): Promise<boolean> {
     try {
-      // 尝试获取锁
+      // 尝试获取锁，Redlock v5 会通过 automaticExtensionThreshold 自动续期
       this.currentLock = await this.redlock.acquire([this.lockKey], this.lockTTL);
       this.isLeader = true;
 
       logger.info(`Pod ${this.podName} became leader`);
-
-      // 开始自动续期
-      this.startRenewal();
 
       return true;
     } catch (error) {
@@ -70,44 +75,11 @@ export class LeaderElectionService {
         await this.currentLock.release();
         logger.info(`Pod ${this.podName} released leadership`);
       } catch (error) {
-        logger.error(`Failed to release leadership: ${(error as Error).message}`);
+        logger.warn(`Failed to release leadership: ${(error as Error).message}`);
       } finally {
         this.currentLock = null;
         this.isLeader = false;
-        this.stopRenewal();
       }
-    }
-  }
-
-  // 开始自动续期
-  private startRenewal(): void {
-    if (this.renewalInterval) {
-      return;
-    }
-
-    // 每隔 lockTTL/2 时间续期一次
-    const renewalPeriod = this.lockTTL / 2;
-
-    this.renewalInterval = setInterval(async () => {
-      if (this.currentLock) {
-        try {
-          await this.currentLock.extend(this.lockTTL);
-          logger.debug(`Pod ${this.podName} renewed leadership`);
-        } catch (error) {
-          logger.error(`Failed to renew leadership: ${(error as Error).message}`);
-          this.isLeader = false;
-          this.currentLock = null;
-          this.stopRenewal();
-        }
-      }
-    }, renewalPeriod);
-  }
-
-  // 停止自动续期
-  private stopRenewal(): void {
-    if (this.renewalInterval) {
-      clearInterval(this.renewalInterval);
-      this.renewalInterval = null;
     }
   }
 
@@ -148,7 +120,6 @@ export class LeaderElectionService {
 
   // 关闭服务
   async close(): Promise<void> {
-    this.stopRenewal();
     await this.releaseLeadership();
     await this.redis.quit();
     logger.info('Leader election service closed');

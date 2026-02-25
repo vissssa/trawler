@@ -1,8 +1,12 @@
+process.env.LOG_FILE = process.env.LOG_FILE || 'api.log';
+
 import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import { config } from '../config';
-import { logger } from '../utils/logger';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('api');
 import { registerTaskRoutes } from './routes';
 import { connectDatabase } from '../services/database';
 

@@ -47,7 +47,7 @@ export const config = {
   leaderElection: {
     enabled: process.env.ENABLE_LEADER_ELECTION === 'true',
     lockKey: process.env.LOCK_KEY || 'trawler:leader',
-    lockTTL: 10000, // 10秒
+    lockTTL: 60000, // 60秒
     podName: process.env.POD_NAME || 'local',
   },
 

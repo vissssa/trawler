@@ -1,3 +1,5 @@
+process.env.LOG_FILE = process.env.LOG_FILE || 'worker.log';
+
 import { Worker, Job } from 'bullmq';
 import Redis from 'ioredis';
 import { config } from '../config';

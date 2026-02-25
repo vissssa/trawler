@@ -1,7 +1,9 @@
 import { Queue, QueueEvents, Job } from 'bullmq';
 import Redis from 'ioredis';
 import { config } from '../config';
-import { logger } from '../utils/logger';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('queue');
 import { CrawlOptions } from '../models/Task';
 
 // 任务数据接口
