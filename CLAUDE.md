@@ -25,7 +25,7 @@ src/
 ├── utils/
 │   └── logger.ts              # 日志工具（Pino）
 ├── worker/
-│   ├── handlers.ts            # Crawlee 页面处理器
+│   ├── handlers.ts            # Crawlee 页面处理器 + HTML→Markdown 转换
 │   ├── crawler.ts             # PlaywrightCrawler 工厂
 │   └── consumer.ts            # BullMQ Worker 入口
 └── scheduler/
@@ -88,11 +88,14 @@ npm run format          # Prettier 格式化
 - 各服务模块使用命名 logger（database/queue/leader-election/api/api:routes）
 - 端到端验证：API → BullMQ → Worker → Crawlee+Playwright → 文件保存 → MongoDB 更新
 
-### 🔲 阶段3：功能增强（待实现）
+### 🔲 阶段3：功能增强（部分完成）
 1. Worker/Scheduler 单元测试（Mock Crawlee、BullMQ、fs）
 2. 文件下载端点（`GET /tasks/:taskId/files`）
-3. 修复已有测试问题（API 测试的 Redis mock、路由重复注册）
-4. HTML → Markdown 转换（turndown）
+3. ~~修复已有测试问题（API 测试的 Redis mock、路由重复注册）~~ ✅
+4. ~~HTML → Markdown 转换（turndown）~~ ✅
+5. ~~URL 去重（API 层 `new Set` + Worker 层 Crawlee RequestQueue 内建去重）~~ ✅
+6. ~~CSS 选择器内容筛选（`contentSelector` 选项，cheerio 提取）~~ ✅
+7. ~~Markdown 链接绝对化（cheerio 遍历 `[href]`/`[src]`，`new URL` 转绝对）~~ ✅
 
 ### 🔲 阶段4：监控与可观测性
 5. Prometheus 指标端点（`GET /metrics`）
@@ -103,18 +106,18 @@ npm run format          # Prettier 格式化
 8. K8s 部署配置（Deployment/Service/PVC/ConfigMap）
 9. CI/CD（GitHub Actions）
 
-### 🔲 阶段6：高级功能
+### 🔲 阶段6：高级功能（部分完成）
 10. 代理轮换
-11. 内容过滤（CSS 选择器）
+11. ~~内容过滤（CSS 选择器）~~ ✅（通过 `contentSelector` 实现）
 12. 截图 / PDF 导出
 
 ## 技术债务
 
 | 项目 | 优先级 | 说明 |
 |------|--------|------|
-| server.ts lint 错误 | 高 | 4 个 unused-vars，1 个 any 警告 |
-| API 测试路由重复注册 | 中 | routes.test.ts 多次 registerTaskRoutes 报错 |
-| 集成测试需要 MongoDB | 中 | Task.test.ts 依赖运行中的 MongoDB |
+| ~~server.ts lint 错误~~ | ~~高~~ | ✅ 已修复：unused-vars 加 `_` 前缀，`as any` 改用 `FastifyError` 泛型 |
+| ~~API 测试路由重复注册~~ | ~~中~~ | ✅ 已修复：routes.test.ts 移除多余的 registerTaskRoutes 调用 |
+| ~~集成测试需要 MongoDB~~ | ~~中~~ | ✅ 已修复：Task.test.ts 改用 mongodb-memory-server |
 | 配置不可变性 | 低 | config 应 Object.freeze() |
 
 ## 编码规范

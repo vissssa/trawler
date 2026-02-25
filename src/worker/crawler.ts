@@ -74,7 +74,7 @@ export function createCrawler(taskId: string, options: CrawlOptions): Playwright
 
   const crawler = new PlaywrightCrawler(
     {
-      requestHandler: createRequestHandler(taskId),
+      requestHandler: createRequestHandler(taskId, options),
       failedRequestHandler: createFailedRequestHandler(taskId),
       maxCrawlDepth: options.maxDepth,
       maxRequestsPerCrawl: options.maxPages,

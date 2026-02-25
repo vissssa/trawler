@@ -33,6 +33,7 @@ export interface CrawlOptions {
   captureScreenshot?: boolean;
   extractResources?: boolean;
   respectRobotsTxt?: boolean;
+  contentSelector?: string | string[];
   rateLimit?: {
     maxRequests: number;
     perSeconds: number;
@@ -41,7 +42,7 @@ export interface CrawlOptions {
 
 // 文件结果接口
 export interface FileResult {
-  type: 'html' | 'pdf' | 'screenshot' | 'resource';
+  type: 'html' | 'markdown' | 'pdf' | 'screenshot' | 'resource';
   url: string;
   path: string;
   size: number;
@@ -128,7 +129,7 @@ const taskSchema = new Schema<TaskDocument>(
       files: {
         type: [
           {
-            type: { type: String, enum: ['html', 'pdf', 'screenshot', 'resource'] },
+            type: { type: String, enum: ['html', 'markdown', 'pdf', 'screenshot', 'resource'] },
             url: String,
             path: String,
             size: Number,

@@ -49,6 +49,12 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
                 captureScreenshot: { type: 'boolean' },
                 extractResources: { type: 'boolean' },
                 respectRobotsTxt: { type: 'boolean' },
+                contentSelector: {
+                  oneOf: [
+                    { type: 'string' },
+                    { type: 'array', items: { type: 'string' } },
+                  ],
+                },
               },
             },
           },
@@ -68,16 +74,17 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
     },
     async (request: FastifyRequest<{ Body: CreateTaskBody }>, reply: FastifyReply) => {
       const { urls, options = {} } = request.body;
+      const uniqueUrls = [...new Set(urls)];
 
       try {
         // 创建任务文档
         const task = new Task({
-          urls,
+          urls: uniqueUrls,
           options,
           status: TaskStatus.PENDING,
           progress: {
             completed: 0,
-            total: urls.length,
+            total: uniqueUrls.length,
             failed: 0,
           },
         });
@@ -86,7 +93,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
         logger.info(`Created task ${task.taskId}`);
 
         // 添加到队列
-        await queueService.addJob(task.taskId, urls, options);
+        await queueService.addJob(task.taskId, uniqueUrls, options);
         logger.info(`Added task ${task.taskId} to queue`);
 
         reply.status(201).send({

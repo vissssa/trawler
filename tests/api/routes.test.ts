@@ -1,6 +1,5 @@
 import { FastifyInstance } from 'fastify';
 import { createServer } from '../../src/api/server';
-import { registerTaskRoutes } from '../../src/api/routes';
 import { Task, TaskStatus } from '../../src/models/Task';
 import { getQueueService } from '../../src/services/queue';
 
@@ -15,14 +14,18 @@ jest.mock('../../src/config', () => ({
     },
   },
 }));
-jest.mock('../../src/utils/logger', () => ({
-  logger: {
+jest.mock('../../src/utils/logger', () => {
+  const mockLogger = {
     info: jest.fn(),
     error: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-  },
-}));
+  };
+  return {
+    createLogger: jest.fn(() => mockLogger),
+    logger: mockLogger,
+  };
+});
 
 describe('Task Management API', () => {
   let server: FastifyInstance;
@@ -40,7 +43,6 @@ describe('Task Management API', () => {
     (getQueueService as jest.Mock).mockReturnValue(mockQueueService);
 
     server = await createServer();
-    await registerTaskRoutes(server);
   });
 
   afterEach(async () => {
@@ -107,6 +109,45 @@ describe('Task Management API', () => {
       });
 
       expect(response.statusCode).toBe(400);
+    });
+
+    it('should deduplicate URLs', async () => {
+      const mockTask = {
+        taskId: 'task_dedup',
+        urls: ['https://example.com', 'https://other.com'],
+        status: TaskStatus.PENDING,
+        options: {},
+        progress: { completed: 0, total: 2, failed: 0 },
+        createdAt: new Date(),
+        save: jest.fn().mockResolvedValue(true),
+      };
+
+      (Task as any).mockImplementation((data: any) => {
+        // Verify deduplicated urls are passed to constructor
+        expect(data.urls).toEqual(['https://example.com', 'https://other.com']);
+        expect(data.progress.total).toBe(2);
+        return mockTask;
+      });
+      mockQueueService.addJob.mockResolvedValue({ id: 'task_dedup' });
+
+      const response = await server.inject({
+        method: 'POST',
+        url: '/tasks',
+        payload: {
+          urls: [
+            'https://example.com',
+            'https://other.com',
+            'https://example.com',
+          ],
+        },
+      });
+
+      expect(response.statusCode).toBe(201);
+      expect(mockQueueService.addJob).toHaveBeenCalledWith(
+        'task_dedup',
+        ['https://example.com', 'https://other.com'],
+        {}
+      );
     });
   });
 
