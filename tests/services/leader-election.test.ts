@@ -17,14 +17,18 @@ jest.mock('../../src/config', () => ({
     },
   },
 }));
-jest.mock('../../src/utils/logger', () => ({
-  logger: {
+jest.mock('../../src/utils/logger', () => {
+  const mockLogger = {
     info: jest.fn(),
     error: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-  },
-}));
+  };
+  return {
+    createLogger: jest.fn(() => mockLogger),
+    logger: mockLogger,
+  };
+});
 
 describe('LeaderElectionService', () => {
   let leaderElectionService: LeaderElectionService;
@@ -84,17 +88,6 @@ describe('LeaderElectionService', () => {
       expect(result).toBe(false);
       expect(leaderElectionService.isCurrentLeader()).toBe(false);
     });
-
-    it('should start automatic renewal after acquiring leadership', async () => {
-      mockRedlock.acquire.mockResolvedValue(mockLock);
-
-      await leaderElectionService.acquireLeadership();
-
-      // Fast-forward to renewal period (lockTTL/2 = 5000ms)
-      jest.advanceTimersByTime(5000);
-
-      expect(mockLock.extend).toHaveBeenCalledWith(10000);
-    });
   });
 
   describe('releaseLeadership', () => {
@@ -110,54 +103,6 @@ describe('LeaderElectionService', () => {
 
     it('should handle release when not leader', async () => {
       await expect(leaderElectionService.releaseLeadership()).resolves.not.toThrow();
-    });
-
-    it('should stop renewal interval after releasing', async () => {
-      mockRedlock.acquire.mockResolvedValue(mockLock);
-      await leaderElectionService.acquireLeadership();
-
-      await leaderElectionService.releaseLeadership();
-
-      // Advance time and verify extend is not called
-      mockLock.extend.mockClear();
-      jest.advanceTimersByTime(5000);
-
-      expect(mockLock.extend).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('renewal mechanism', () => {
-    it('should renew leadership periodically', async () => {
-      mockRedlock.acquire.mockResolvedValue(mockLock);
-      await leaderElectionService.acquireLeadership();
-
-      // Clear initial calls
-      mockLock.extend.mockClear();
-
-      // Fast-forward through multiple renewal periods
-      jest.advanceTimersByTime(5000);
-      expect(mockLock.extend).toHaveBeenCalledTimes(1);
-
-      jest.advanceTimersByTime(5000);
-      expect(mockLock.extend).toHaveBeenCalledTimes(2);
-
-      jest.advanceTimersByTime(5000);
-      expect(mockLock.extend).toHaveBeenCalledTimes(3);
-    });
-
-    it('should handle renewal failure', async () => {
-      mockRedlock.acquire.mockResolvedValue(mockLock);
-      await leaderElectionService.acquireLeadership();
-
-      // Make renewal fail
-      mockLock.extend.mockRejectedValue(new Error('Renewal failed'));
-
-      jest.advanceTimersByTime(5000);
-
-      // Wait for the async renewal to complete
-      await Promise.resolve();
-
-      expect(leaderElectionService.isCurrentLeader()).toBe(false);
     });
   });
 

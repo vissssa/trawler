@@ -1,14 +1,19 @@
 import mongoose from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
 import { Task, TaskStatus } from '../../src/models/Task';
+
+let mongoServer: MongoMemoryServer;
 
 describe('Task Model', () => {
   beforeAll(async () => {
-    await mongoose.connect('mongodb://localhost:27017/trawler-test');
-  }, 10000);
+    mongoServer = await MongoMemoryServer.create();
+    await mongoose.connect(mongoServer.getUri());
+  }, 30000);
 
   afterAll(async () => {
     await mongoose.connection.dropDatabase();
     await mongoose.connection.close();
+    await mongoServer.stop();
   }, 10000);
 
   afterEach(async () => {

@@ -14,14 +14,18 @@ jest.mock('../../src/config', () => ({
     },
   },
 }));
-jest.mock('../../src/utils/logger', () => ({
-  logger: {
+jest.mock('../../src/utils/logger', () => {
+  const mockLogger = {
     info: jest.fn(),
     error: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-  },
-}));
+  };
+  return {
+    createLogger: jest.fn(() => mockLogger),
+    logger: mockLogger,
+  };
+});
 
 describe('QueueService', () => {
   let queueService: QueueService;

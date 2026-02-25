@@ -1,6 +1,6 @@
 # Trawler - 网页爬虫 API 服务
 
-面向大模型知识库的网页爬取 API 服务。支持静态/动态网页爬取、递归爬取、速率限制。
+面向大模型知识库的网页爬取 API 服务。支持静态/动态网页爬取、递归爬取、HTML → Markdown 自动转换、速率限制。
 
 ## 快速开始
 
@@ -47,6 +47,23 @@ npm run dev:worker
 # 终端 3：Scheduler 定时清理
 npm run dev:scheduler
 ```
+
+生产模式：
+
+```bash
+npm run build
+npm run start:api
+npm run start:worker
+npm run start:scheduler
+```
+
+### 停止服务
+
+各进程支持优雅关闭，按 `Ctrl+C` 即可停止。服务收到 `SIGINT` / `SIGTERM` 后会：
+
+- API：关闭 HTTP 监听，等待请求完成
+- Worker：停止接收新任务，等待当前爬取完成
+- Scheduler：释放 Leader 锁，关闭 Redis 连接
 
 ### 日志文件
 
@@ -313,17 +330,19 @@ curl http://localhost:3000/ready
 
 ## 爬取结果
 
-爬取的 HTML 文件保存在 `data/tasks/{taskId}/` 目录下：
+每个页面同时生成 HTML 和 Markdown 两份文件，保存在 `data/tasks/{taskId}/` 目录下：
 
 ```
 data/tasks/
 └── task_1772000189593_47731b84/
-    ├── c984d06aafbecf6bc55569f964148ea3.html    # md5(url).html
+    ├── c984d06aafbecf6bc55569f964148ea3.html    # 原始 HTML
+    ├── c984d06aafbecf6bc55569f964148ea3.md      # Markdown 转换（turndown）
     ├── a1b2c3d4e5f6...html
+    ├── a1b2c3d4e5f6...md
     └── ...
 ```
 
-文件名为 URL 的 MD5 哈希值，内容为完整 HTML。
+文件名为 URL 的 MD5 哈希值。Markdown 由 [turndown](https://github.com/mixmark-io/turndown) 自动转换，适合直接导入大模型知识库。
 
 ---
 

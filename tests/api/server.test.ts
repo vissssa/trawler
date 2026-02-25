@@ -12,13 +12,26 @@ jest.mock('../../src/config', () => ({
 }));
 
 // Mock logger
-jest.mock('../../src/utils/logger', () => ({
-  logger: {
+jest.mock('../../src/utils/logger', () => {
+  const mockLogger = {
     info: jest.fn(),
     error: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
-  },
+  };
+  return {
+    createLogger: jest.fn(() => mockLogger),
+    logger: mockLogger,
+  };
+});
+
+// Mock queue service to avoid Redis connection
+jest.mock('../../src/services/queue', () => ({
+  getQueueService: jest.fn(() => ({
+    addJob: jest.fn(),
+    removeJob: jest.fn(),
+    getStats: jest.fn(),
+  })),
 }));
 
 describe('Fastify Server', () => {

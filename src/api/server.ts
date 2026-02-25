@@ -1,6 +1,6 @@
 process.env.LOG_FILE = process.env.LOG_FILE || 'api.log';
 
-import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import Fastify, { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import { config } from '../config';
@@ -50,7 +50,7 @@ export async function createServer(): Promise<FastifyInstance> {
   });
 
   // 健康检查端点
-  server.get('/health', async (request: FastifyRequest, reply: FastifyReply) => {
+  server.get('/health', async (_request: FastifyRequest, _reply: FastifyReply) => {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -59,7 +59,7 @@ export async function createServer(): Promise<FastifyInstance> {
   });
 
   // 就绪检查端点
-  server.get('/ready', async (request: FastifyRequest, reply: FastifyReply) => {
+  server.get('/ready', async (_request: FastifyRequest, _reply: FastifyReply) => {
     // TODO: 添加数据库连接检查等
     return {
       status: 'ready',
@@ -71,7 +71,7 @@ export async function createServer(): Promise<FastifyInstance> {
   await registerTaskRoutes(server);
 
   // 全局错误处理
-  server.setErrorHandler((error, request, reply) => {
+  server.setErrorHandler<FastifyError>((error, request, reply) => {
     logger.error({
       err: error,
       reqId: request.id,
@@ -79,23 +79,20 @@ export async function createServer(): Promise<FastifyInstance> {
       method: request.method,
     });
 
-    // 类型保护
-    const err = error as any;
-
     // 根据错误类型返回不同的状态码
-    if (err.validation) {
+    if (error.validation) {
       reply.status(400).send({
         error: 'Validation Error',
-        message: err.message,
-        details: err.validation,
+        message: error.message,
+        details: error.validation,
       });
       return;
     }
 
-    if (err.statusCode) {
-      reply.status(err.statusCode).send({
-        error: err.name,
-        message: err.message,
+    if (error.statusCode) {
+      reply.status(error.statusCode).send({
+        error: error.name,
+        message: error.message,
       });
       return;
     }
@@ -103,7 +100,7 @@ export async function createServer(): Promise<FastifyInstance> {
     // 默认返回 500
     reply.status(500).send({
       error: 'Internal Server Error',
-      message: config.env === 'development' ? err.message : 'An error occurred',
+      message: config.env === 'development' ? error.message : 'An error occurred',
     });
   });
 
