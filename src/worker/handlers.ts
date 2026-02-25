@@ -15,12 +15,12 @@ const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fen
 // Remove script/style/noscript tags from Markdown output
 turndown.remove(['script', 'style', 'noscript']);
 
-function md5(input: string): string {
+export function md5(input: string): string {
   return createHash('md5').update(input).digest('hex');
 }
 
 /** Extract content matching CSS selectors; falls back to full HTML if no match */
-function extractBySelectors(html: string, selectors: string | string[]): string {
+export function extractBySelectors(html: string, selectors: string | string[]): string {
   const selectorList = Array.isArray(selectors) ? selectors : [selectors];
   const $ = cheerio.load(html);
   const fragments: string[] = [];
@@ -35,7 +35,7 @@ function extractBySelectors(html: string, selectors: string | string[]): string 
 }
 
 /** Resolve relative href/src attributes to absolute URLs */
-function resolveRelativeUrls(html: string, baseUrl: string): string {
+export function resolveRelativeUrls(html: string, baseUrl: string): string {
   const $ = cheerio.load(html);
 
   $('[href]').each((_, el) => {
