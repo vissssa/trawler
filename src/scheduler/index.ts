@@ -9,6 +9,20 @@ const logger = createLogger('scheduler');
 
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
+async function runOneCycle(
+  leaderService: ReturnType<typeof getLeaderElectionService>
+): Promise<void> {
+  if (!leaderService.isCurrentLeader()) {
+    await leaderService.acquireLeadership();
+  }
+
+  if (leaderService.isCurrentLeader()) {
+    await runAllCleanups();
+  } else {
+    logger.debug('Not leader, skipping cleanup cycle');
+  }
+}
+
 async function main(): Promise<void> {
   logger.info('Starting scheduler...');
 
@@ -39,17 +53,7 @@ async function main(): Promise<void> {
   // Main loop
   while (running) {
     try {
-      // If not leader, try to acquire
-      if (!leaderService.isCurrentLeader()) {
-        await leaderService.acquireLeadership();
-      }
-
-      // Only run cleanups if we are the leader
-      if (leaderService.isCurrentLeader()) {
-        await runAllCleanups();
-      } else {
-        logger.debug('Not leader, skipping cleanup cycle');
-      }
+      await runOneCycle(leaderService);
     } catch (error) {
       logger.error({ error: (error as Error).message }, 'Error in cleanup cycle');
     }
@@ -67,4 +71,4 @@ if (require.main === module) {
   });
 }
 
-export { main };
+export { main, runOneCycle };
