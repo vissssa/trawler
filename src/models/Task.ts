@@ -96,6 +96,7 @@ const taskSchema = new Schema<TaskDocument>(
       required: true,
       unique: true,
       index: true,
+      default: generateTaskId,
     },
     urls: {
       type: [String],
@@ -169,13 +170,6 @@ function generateTaskId(): string {
   const random = randomBytes(4).toString('hex');
   return `task_${timestamp}_${random}`;
 }
-
-// Pre-save hook to generate taskId if not provided
-taskSchema.pre('save', function () {
-  if (!this.taskId) {
-    this.taskId = generateTaskId();
-  }
-});
 
 // 索引配置
 taskSchema.index({ createdAt: 1 });
