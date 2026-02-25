@@ -24,39 +24,39 @@ function parseIntWithValidation(
   return parsed;
 }
 
-export const config = {
+export const config = Object.freeze({
   env: process.env.NODE_ENV || 'development',
 
-  redis: {
+  redis: Object.freeze({
     url: process.env.REDIS_URL || 'redis://localhost:6379',
-  },
+  }),
 
-  mongodb: {
+  mongodb: Object.freeze({
     url: process.env.MONGODB_URL || 'mongodb://localhost:27017/trawler',
-  },
+  }),
 
-  api: {
+  api: Object.freeze({
     port: parseIntWithValidation(process.env.API_PORT, 3000, 1024, 65535),
     metricsPort: parseIntWithValidation(process.env.METRICS_PORT, 9090, 1024, 65535),
-  },
+  }),
 
-  worker: {
+  worker: Object.freeze({
     concurrency: parseIntWithValidation(process.env.WORKER_CONCURRENCY, 3, 1, 100),
-  },
+  }),
 
-  leaderElection: {
+  leaderElection: Object.freeze({
     enabled: process.env.ENABLE_LEADER_ELECTION === 'true',
     lockKey: process.env.LOCK_KEY || 'trawler:leader',
     lockTTL: 60000, // 60秒
     podName: process.env.POD_NAME || 'local',
-  },
+  }),
 
-  storage: {
+  storage: Object.freeze({
     dataDir: process.env.DATA_DIR || './data/tasks',
-  },
+  }),
 
-  task: {
+  task: Object.freeze({
     maxTimeoutMs: parseIntWithValidation(process.env.MAX_TASK_TIMEOUT_MS, 7200000, 1000),
     retentionDays: parseIntWithValidation(process.env.RETENTION_DAYS, 7, 1, 365),
-  },
-};
+  }),
+});
