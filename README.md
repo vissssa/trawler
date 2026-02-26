@@ -94,6 +94,10 @@ tail -f logs/scheduler.log
 ## API 使用文档
 
 > 基础地址：`http://localhost:3000`
+>
+> **交互式文档（Swagger UI）**：[http://localhost:3000/docs](http://localhost:3000/docs) — 可在线查看所有接口定义并直接发起请求
+>
+> **OpenAPI JSON**：`http://localhost:3000/docs/json`
 
 ### 1. 创建爬取任务
 

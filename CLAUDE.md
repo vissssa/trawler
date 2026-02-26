@@ -35,7 +35,7 @@ Trawler 是面向大模型知识库的网页爬虫 API 服务，支持静态/动
 └── src/
     ├── api/
     │   ├── routes.ts              # API 路由（9个端点，含 /metrics）
-    │   └── server.ts              # Fastify 服务器配置
+    │   └── server.ts              # Fastify 服务器配置（含 Swagger UI）
     ├── config/
     │   └── index.ts               # 配置管理（环境变量+验证）
     ├── errors/
@@ -63,7 +63,7 @@ Trawler 是面向大模型知识库的网页爬虫 API 服务，支持静态/动
 
 系统由三个独立进程组成：
 
-- **API** (`npm run dev:api`) — Fastify HTTP 服务，接收任务创建请求，写入 MongoDB + BullMQ 队列
+- **API** (`npm run dev:api`) — Fastify HTTP 服务，接收任务创建请求，写入 MongoDB + BullMQ 队列，内置 Swagger UI 交互式文档（`/docs`）
 - **Worker** (`npm run dev:worker`) — BullMQ Consumer，从队列取任务，用 Crawlee+Playwright 爬取网页，HTML 保存到磁盘，进度写入 MongoDB
 - **Scheduler** (`npm run dev:scheduler`) — 定时清理进程，通过 Leader 选举保证单实例运行，每5分钟执行五种清理策略（Redis 感知的 stale-pending/running-orphan 修复 + 超时/孤儿/过期清理），启动时自动执行一次一致性检查
 
@@ -93,6 +93,15 @@ npm run format          # Prettier 格式化
 - `PENDING_STALE_MS` — pending 任务超过此时间且 Redis 无对应 job 视为孤儿（默认 1800000 = 30分钟）
 - `RUNNING_ORPHAN_CHECK_MS` — running 任务超过此时间且 Redis 无对应 job 立即标记失败（默认 600000 = 10分钟）
 - `STALE_PENDING_ACTION` — 孤儿 pending 任务处理方式：`reenqueue`（重新入队，默认）或 `fail`（标记失败）
+
+## API 文档
+
+启动服务后访问 Swagger UI 交互式文档：
+
+- **Swagger UI**：`http://localhost:3000/docs`
+- **OpenAPI JSON**：`http://localhost:3000/docs/json`
+
+所有端点按 `Tasks`（任务管理）和 `System`（健康检查与监控）两个 tag 分组，支持在页面内直接发起请求（Try it out）。
 
 ## 截图与 PDF 导出
 
@@ -199,6 +208,9 @@ curl -O http://localhost:3000/tasks/{taskId}/files?type=screenshot&format=single
 13. ~~Scheduler Redis 感知清理~~ ✅（stale pending 任务检测 + 重新入队/标记失败，running 任务 Redis 孤儿检测）
 14. ~~启动时一致性检查~~ ✅（Scheduler 启动后立即执行一次全量清理，快速修复 Redis 重装/清空后的数据不一致）
 15. ~~Prometheus 监控指标~~ ✅（`stale_pending_reconciled_total` + `running_orphaned_by_redis_total`）
+
+### ✅ 阶段8：API 文档
+16. ~~Swagger UI 交互式文档~~ ✅（`@fastify/swagger` + `@fastify/swagger-ui`，`/docs` 路径，全部端点含 tags/summary/description，POST /tasks 含参数说明和 Try it out 示例）
 
 ## 技术债务
 
