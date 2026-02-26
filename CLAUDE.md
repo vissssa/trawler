@@ -12,6 +12,12 @@ Trawler 是面向大模型知识库的网页爬虫 API 服务，支持静态/动
 ```
 ├── .dockerignore                  # Docker 构建排除规则
 ├── Dockerfile                     # 三阶段构建（deps → builder → runtime）
+├── build/
+│   ├── base/
+│   │   ├── Dockerfile.amd64       # amd64 base 镜像（node:22-slim + Playwright Chromium）
+│   │   └── Dockerfile.arm64       # arm64 base 镜像（node:22-slim + Playwright Chromium）
+│   ├── Dockerfile.amd64           # amd64 打包镜像（FROM base + COPY output/）
+│   └── Dockerfile.arm64           # arm64 打包镜像（FROM base + COPY output/）
 ├── k8s/
 │   ├── configmap.yaml             # 非敏感环境变量
 │   ├── secret.yaml                # 敏感配置模板（MongoDB/Redis URL）
