@@ -1,4 +1,4 @@
-import { PlaywrightCrawler, Configuration } from 'crawlee';
+import { PlaywrightCrawler, Configuration, ProxyConfiguration } from 'crawlee';
 import { createCrawler } from '../../src/worker/crawler';
 
 jest.mock('crawlee');
@@ -9,6 +9,7 @@ jest.mock('../../src/worker/handlers', () => ({
 jest.mock('../../src/config', () => ({
   config: {
     worker: { concurrency: 3 },
+    proxy: { urls: [] },
   },
 }));
 jest.mock('../../src/utils/logger', () => {
@@ -142,5 +143,26 @@ describe('createCrawler', () => {
     expect(mockPage.setExtraHTTPHeaders).toHaveBeenCalledWith(
       expect.objectContaining({ Cookie: 'session=abc123; lang=zh' })
     );
+  });
+
+  it('应该将 proxy.urls 传递给 ProxyConfiguration', () => {
+    createCrawler('task_proxy', {
+      proxy: { urls: ['http://proxy1:8080', 'http://proxy2:8080'] },
+    });
+
+    expect(ProxyConfiguration).toHaveBeenCalledWith({
+      proxyUrls: ['http://proxy1:8080', 'http://proxy2:8080'],
+    });
+
+    const crawlerOpts = MockPlaywrightCrawler.mock.calls[0][0];
+    expect(crawlerOpts?.proxyConfiguration).toBeDefined();
+  });
+
+  it('无 proxy 时不应创建 ProxyConfiguration', () => {
+    createCrawler('task_no_proxy', {});
+
+    expect(ProxyConfiguration).not.toHaveBeenCalled();
+    const crawlerOpts = MockPlaywrightCrawler.mock.calls[0][0];
+    expect(crawlerOpts?.proxyConfiguration).toBeUndefined();
   });
 });

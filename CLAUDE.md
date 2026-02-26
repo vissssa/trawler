@@ -22,21 +22,24 @@ Trawler 是面向大模型知识库的网页爬虫 API 服务，支持静态/动
 │   └── hpa.yaml                   # HPA（API + Worker 自动扩缩）
 └── src/
     ├── api/
-    │   ├── routes.ts              # API 路由（8个端点）
+    │   ├── routes.ts              # API 路由（9个端点，含 /metrics）
     │   └── server.ts              # Fastify 服务器配置
     ├── config/
     │   └── index.ts               # 配置管理（环境变量+验证）
+    ├── errors/
+    │   └── index.ts               # 结构化错误类（AppError/NotFoundError/BadRequestError/ConflictError）
     ├── models/
     │   └── Task.ts                # MongoDB Task 模型
     ├── services/
     │   ├── database.ts            # 数据库连接服务
     │   ├── leader-election.ts     # Leader 选举（Redlock）
+    │   ├── metrics.ts             # Prometheus 指标（prom-client）
     │   └── queue.ts               # 任务队列（BullMQ）
     ├── utils/
     │   └── logger.ts              # 日志工具（Pino）
     ├── worker/
-    │   ├── handlers.ts            # Crawlee 页面处理器 + HTML→Markdown 转换
-    │   ├── crawler.ts             # PlaywrightCrawler 工厂
+    │   ├── handlers.ts            # Crawlee 页面处理器 + HTML→Markdown 转换 + 截图/PDF
+    │   ├── crawler.ts             # PlaywrightCrawler 工厂（含代理轮换）
     │   └── consumer.ts            # BullMQ Worker 入口
     └── scheduler/
         ├── cleanup.ts             # 三种清理策略
@@ -72,6 +75,7 @@ npm run format          # Prettier 格式化
 - `MAX_TASK_TIMEOUT_MS` — 任务超时毫秒（默认 7200000 = 2小时）
 - `RETENTION_DAYS` — 已完成任务保留天数（默认 7）
 - `DATA_DIR` — 爬取文件存储目录（默认 ./data/tasks）
+- `PROXY_URLS` — 全局代理 URL 列表，逗号分隔（可选）
 
 ## 实现进度
 
@@ -107,19 +111,19 @@ npm run format          # Prettier 格式化
 6. ~~CSS 选择器内容筛选（`contentSelector` 选项，cheerio 提取）~~ ✅
 7. ~~Markdown 链接绝对化（cheerio 遍历 `[href]`/`[src]`，`new URL` 转绝对）~~ ✅
 
-### 🔲 阶段4：监控与可观测性
-5. Prometheus 指标端点（`GET /metrics`）
-6. 结构化错误处理（自定义错误类型）
+### ✅ 阶段4：监控与可观测性
+5. ~~Prometheus 指标端点（`GET /metrics`）~~ ✅（prom-client，6个自定义指标 + 默认进程指标）
+6. ~~结构化错误处理（自定义错误类型）~~ ✅（AppError 基类 + NotFoundError/BadRequestError/ConflictError/InternalError）
 
 ### ✅ 阶段5：部署与运维（部分完成）
 7. ~~Dockerfile（多阶段构建 + Playwright 预装）~~ ✅
 8. ~~K8s 部署配置（Deployment/Service/PVC/ConfigMap/HPA）~~ ✅
-9. CI/CD（GitHub Actions）
+9. ~~CI/CD（GitHub Actions）~~ — 不需要
 
-### 🔲 阶段6：高级功能（部分完成）
-10. 代理轮换
+### ✅ 阶段6：高级功能（部分完成）
+10. ~~代理轮换~~ ✅（task 级别 + 全局 PROXY_URLS，Crawlee ProxyConfiguration round-robin）
 11. ~~内容过滤（CSS 选择器）~~ ✅（通过 `contentSelector` 实现）
-12. 截图 / PDF 导出
+12. ~~截图 / PDF 导出~~ ✅（`captureScreenshot` PNG + `capturePdf` A4 PDF）
 
 ## 技术债务
 

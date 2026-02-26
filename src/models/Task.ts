@@ -31,9 +31,13 @@ export interface CrawlOptions {
   auth?: AuthConfig;
   followRedirects?: boolean;
   captureScreenshot?: boolean;
+  capturePdf?: boolean;
   extractResources?: boolean;
   respectRobotsTxt?: boolean;
   contentSelector?: string | string[];
+  proxy?: {
+    urls: string[];
+  };
   rateLimit?: {
     maxRequests: number;
     perSeconds: number;

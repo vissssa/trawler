@@ -9,6 +9,14 @@ import archiver from 'archiver';
 // Mock dependencies
 jest.mock('../../src/models/Task');
 jest.mock('../../src/services/queue');
+jest.mock('../../src/services/metrics', () => ({
+  metricsRegistry: { contentType: 'text/plain', metrics: jest.fn().mockResolvedValue('') },
+  httpRequestDuration: { observe: jest.fn() },
+  tasksTotal: { inc: jest.fn() },
+  tasksCurrent: {},
+  queueDepth: {},
+  pagesCrawledTotal: { inc: jest.fn() },
+}));
 jest.mock('../../src/config', () => ({
   config: {
     env: 'test',
@@ -198,7 +206,7 @@ describe('Task Management API', () => {
 
       expect(response.statusCode).toBe(404);
       const body = JSON.parse(response.body);
-      expect(body.error).toBe('Not Found');
+      expect(body.code).toBe('TASK_NOT_FOUND');
     });
   });
 
@@ -315,6 +323,7 @@ describe('Task Management API', () => {
 
       expect(response.statusCode).toBe(400);
       const body = JSON.parse(response.body);
+      expect(body.code).toBe('INVALID_STATE_TRANSITION');
       expect(body.message).toContain('Cannot transition');
       expect(mockTask.save).not.toHaveBeenCalled();
     });

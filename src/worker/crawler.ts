@@ -1,4 +1,4 @@
-import { PlaywrightCrawler, Configuration } from 'crawlee';
+import { PlaywrightCrawler, Configuration, ProxyConfiguration } from 'crawlee';
 import type { CrawlOptions } from '../models/Task';
 import { config } from '../config';
 import { createLogger } from '../utils/logger';
@@ -76,6 +76,17 @@ export function createCrawler(taskId: string, options: CrawlOptions): Playwright
     );
   }
 
+  // Configure proxy rotation (task-level overrides global config)
+  let proxyConfiguration: ProxyConfiguration | undefined;
+  const proxyUrls = options.proxy?.urls?.length
+    ? options.proxy.urls
+    : config.proxy?.urls?.length
+      ? config.proxy.urls
+      : undefined;
+  if (proxyUrls && proxyUrls.length > 0) {
+    proxyConfiguration = new ProxyConfiguration({ proxyUrls });
+  }
+
   const crawler = new PlaywrightCrawler(
     {
       requestHandler: createRequestHandler(taskId, options),
@@ -84,6 +95,7 @@ export function createCrawler(taskId: string, options: CrawlOptions): Playwright
       maxRequestsPerCrawl: options.maxPages,
       maxRequestsPerMinute,
       maxConcurrency: config.worker.concurrency,
+      proxyConfiguration,
       preNavigationHooks,
       launchContext: {
         launchOptions: {

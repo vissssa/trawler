@@ -7,11 +7,14 @@ import {
   createFailedRequestHandler,
 } from '../../src/worker/handlers';
 import { Task } from '../../src/models/Task';
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, writeFile, stat as fsStat } from 'fs/promises';
 
 // Mock dependencies that handlers.ts imports at module level
 jest.mock('../../src/models/Task');
 jest.mock('fs/promises');
+jest.mock('../../src/services/metrics', () => ({
+  pagesCrawledTotal: { inc: jest.fn() },
+}));
 jest.mock('../../src/config', () => ({
   config: {
     storage: { dataDir: '/tmp/test-data' },
@@ -91,11 +94,14 @@ describe('createRequestHandler', () => {
     (Task.updateOne as jest.Mock).mockResolvedValue({});
     (mkdir as jest.Mock).mockResolvedValue(undefined);
     (writeFile as jest.Mock).mockResolvedValue(undefined);
+    (fsStat as jest.Mock).mockResolvedValue({ size: 12345 });
 
     mockCtx = {
       page: {
         content: jest.fn().mockResolvedValue('<html><body><h1>Hello</h1></body></html>'),
         waitForLoadState: jest.fn().mockResolvedValue(undefined),
+        screenshot: jest.fn().mockResolvedValue(undefined),
+        pdf: jest.fn().mockResolvedValue(undefined),
       },
       request: { url: 'https://example.com/page1' },
       enqueueLinks: jest.fn().mockResolvedValue({ processedRequests: [] }),
@@ -167,6 +173,43 @@ describe('createRequestHandler', () => {
     mockCtx.page.waitForLoadState.mockRejectedValue(new Error('timeout'));
     const handler = createRequestHandler('task_test', {});
     await expect(handler(mockCtx)).resolves.not.toThrow();
+  });
+
+  it('captureScreenshot 为 true 时应截图', async () => {
+    const handler = createRequestHandler('task_test', { captureScreenshot: true });
+    await handler(mockCtx);
+
+    expect(mockCtx.page.screenshot).toHaveBeenCalledWith(
+      expect.objectContaining({ fullPage: true, path: expect.stringMatching(/\.png$/) })
+    );
+    // File results should include screenshot type
+    const pushCall = (Task.updateOne as jest.Mock).mock.calls.find(
+      (call: any[]) => call[1].$push
+    );
+    const files = pushCall[1].$push['result.files'].$each;
+    expect(files.some((f: any) => f.type === 'screenshot')).toBe(true);
+  });
+
+  it('capturePdf 为 true 时应生成 PDF', async () => {
+    const handler = createRequestHandler('task_test', { capturePdf: true });
+    await handler(mockCtx);
+
+    expect(mockCtx.page.pdf).toHaveBeenCalledWith(
+      expect.objectContaining({ format: 'A4', printBackground: true, path: expect.stringMatching(/\.pdf$/) })
+    );
+    const pushCall = (Task.updateOne as jest.Mock).mock.calls.find(
+      (call: any[]) => call[1].$push
+    );
+    const files = pushCall[1].$push['result.files'].$each;
+    expect(files.some((f: any) => f.type === 'pdf')).toBe(true);
+  });
+
+  it('未设置截图/PDF 时不应调用 page.screenshot/pdf', async () => {
+    const handler = createRequestHandler('task_test', {});
+    await handler(mockCtx);
+
+    expect(mockCtx.page.screenshot).not.toHaveBeenCalled();
+    expect(mockCtx.page.pdf).not.toHaveBeenCalled();
   });
 });
 

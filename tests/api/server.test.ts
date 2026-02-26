@@ -15,6 +15,16 @@ jest.mock('../../src/config', () => ({
   },
 }));
 
+// Mock metrics
+jest.mock('../../src/services/metrics', () => ({
+  metricsRegistry: { contentType: 'text/plain', metrics: jest.fn().mockResolvedValue('') },
+  httpRequestDuration: { observe: jest.fn() },
+  tasksTotal: { inc: jest.fn() },
+  tasksCurrent: {},
+  queueDepth: {},
+  pagesCrawledTotal: { inc: jest.fn() },
+}));
+
 // Mock logger
 jest.mock('../../src/utils/logger', () => {
   const mockLogger = {

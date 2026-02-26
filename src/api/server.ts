@@ -6,6 +6,8 @@ import multipart from '@fastify/multipart';
 import mongoose from 'mongoose';
 import { config } from '../config';
 import { createLogger } from '../utils/logger';
+import { AppError } from '../errors';
+import { metricsRegistry } from '../services/metrics';
 
 const logger = createLogger('api');
 import { registerTaskRoutes } from './routes';
@@ -80,6 +82,12 @@ export async function createServer(): Promise<FastifyInstance> {
   // 注册任务管理路由
   await registerTaskRoutes(server);
 
+  // Prometheus 指标端点
+  server.get('/metrics', async (_request: FastifyRequest, reply: FastifyReply) => {
+    reply.header('Content-Type', metricsRegistry.contentType);
+    return metricsRegistry.metrics();
+  });
+
   // 全局错误处理
   server.setErrorHandler<FastifyError>((error, request, reply) => {
     logger.error({
@@ -93,8 +101,18 @@ export async function createServer(): Promise<FastifyInstance> {
     if (error.validation) {
       reply.status(400).send({
         error: 'Validation Error',
+        code: 'VALIDATION_ERROR',
         message: error.message,
         details: error.validation,
+      });
+      return;
+    }
+
+    if (error instanceof AppError) {
+      reply.status(error.statusCode).send({
+        error: error.name,
+        code: error.code,
+        message: error.message,
       });
       return;
     }
@@ -110,6 +128,7 @@ export async function createServer(): Promise<FastifyInstance> {
     // 默认返回 500
     reply.status(500).send({
       error: 'Internal Server Error',
+      code: 'INTERNAL_ERROR',
       message: config.env === 'development' ? error.message : 'An error occurred',
     });
   });

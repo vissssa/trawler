@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, writeFile, stat as fsStat } from 'fs/promises';
 import path from 'path';
 import type { PlaywrightCrawlingContext } from 'crawlee';
 import * as cheerio from 'cheerio';
@@ -8,6 +8,7 @@ import { Task } from '../models/Task';
 import type { CrawlOptions } from '../models/Task';
 import { config } from '../config';
 import { createLogger } from '../utils/logger';
+import { pagesCrawledTotal } from '../services/metrics';
 
 const logger = createLogger('worker:handlers');
 const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
@@ -104,6 +105,67 @@ export function createRequestHandler(taskId: string, options: CrawlOptions = {})
 
     const mdFileSize = Buffer.byteLength(markdown, 'utf-8');
 
+    // Build dynamic files list
+    const filesToPush: Array<{
+      type: string;
+      url: string;
+      path: string;
+      size: number;
+      mimeType: string;
+      timestamp: Date;
+    }> = [
+      {
+        type: 'html',
+        url,
+        path: filePath,
+        size: fileSize,
+        mimeType: 'text/html',
+        timestamp: new Date(),
+      },
+      {
+        type: 'markdown',
+        url,
+        path: mdFilePath,
+        size: mdFileSize,
+        mimeType: 'text/markdown',
+        timestamp: new Date(),
+      },
+    ];
+
+    // Capture screenshot if requested
+    if (options.captureScreenshot) {
+      const screenshotFileName = `${md5(url)}.png`;
+      const screenshotPath = path.join(taskDir, screenshotFileName);
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      const screenshotStat = await fsStat(screenshotPath);
+      filesToPush.push({
+        type: 'screenshot',
+        url,
+        path: screenshotPath,
+        size: screenshotStat.size,
+        mimeType: 'image/png',
+        timestamp: new Date(),
+      });
+      logger.debug({ taskId, url, screenshotPath }, 'Screenshot captured');
+    }
+
+    // Capture PDF if requested
+    if (options.capturePdf) {
+      const pdfFileName = `${md5(url)}.pdf`;
+      const pdfPath = path.join(taskDir, pdfFileName);
+      await page.pdf({ path: pdfPath, format: 'A4', printBackground: true });
+      const pdfStat = await fsStat(pdfPath);
+      filesToPush.push({
+        type: 'pdf',
+        url,
+        path: pdfPath,
+        size: pdfStat.size,
+        mimeType: 'application/pdf',
+        timestamp: new Date(),
+      });
+      logger.debug({ taskId, url, pdfPath }, 'PDF captured');
+    }
+
     // Atomic update: increment progress and push file results
     await Task.updateOne(
       { taskId },
@@ -111,30 +173,14 @@ export function createRequestHandler(taskId: string, options: CrawlOptions = {})
         $inc: { 'progress.completed': 1, 'result.stats.success': 1 },
         $push: {
           'result.files': {
-            $each: [
-              {
-                type: 'html',
-                url,
-                path: filePath,
-                size: fileSize,
-                mimeType: 'text/html',
-                timestamp: new Date(),
-              },
-              {
-                type: 'markdown',
-                url,
-                path: mdFilePath,
-                size: mdFileSize,
-                mimeType: 'text/markdown',
-                timestamp: new Date(),
-              },
-            ],
+            $each: filesToPush,
           },
         },
       }
     );
 
     logger.info({ taskId, url, filePath, mdFilePath, fileSize, mdFileSize }, 'Page saved');
+    pagesCrawledTotal.inc({ result: 'success' });
 
     // Enqueue discovered links (same-domain only)
     const enqueuedInfo = await enqueueLinks({ strategy: 'same-domain' });
@@ -156,6 +202,7 @@ export function createFailedRequestHandler(taskId: string) {
     const url = ctx.request.url;
 
     logger.error({ taskId, url, error: error.message }, 'Request failed');
+    pagesCrawledTotal.inc({ result: 'failed' });
 
     await Task.updateOne(
       { taskId },

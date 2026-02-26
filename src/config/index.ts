@@ -59,4 +59,10 @@ export const config = Object.freeze({
     maxTimeoutMs: parseIntWithValidation(process.env.MAX_TASK_TIMEOUT_MS, 7200000, 1000),
     retentionDays: parseIntWithValidation(process.env.RETENTION_DAYS, 7, 1, 365),
   }),
+
+  proxy: Object.freeze({
+    urls: process.env.PROXY_URLS
+      ? process.env.PROXY_URLS.split(',').map((u) => u.trim()).filter(Boolean)
+      : ([] as string[]),
+  }),
 });

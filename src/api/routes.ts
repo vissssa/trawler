@@ -7,6 +7,8 @@ import { Task, TaskStatus, CrawlOptions } from '../models/Task';
 import { getQueueService } from '../services/queue';
 import { config } from '../config';
 import { createLogger } from '../utils/logger';
+import { NotFoundError, BadRequestError } from '../errors';
+import { httpRequestDuration, tasksTotal } from '../services/metrics';
 
 const logger = createLogger('api:routes');
 
@@ -27,6 +29,23 @@ interface UpdateTaskBody {
 // 注册任务管理路由
 export async function registerTaskRoutes(server: FastifyInstance): Promise<void> {
   const queueService = getQueueService();
+
+  // 请求延迟 Prometheus 指标
+  server.addHook('onResponse', (request, reply, done) => {
+    // 跳过 /metrics 自身，避免自引用
+    if (request.url === '/metrics') {
+      done();
+      return;
+    }
+    const duration = reply.elapsedTime / 1000; // ms → s
+    // 使用 routeOptions.url 获取路由模板（如 /tasks/:taskId），避免高基数
+    const route = (request.routeOptions?.url as string) || request.url;
+    httpRequestDuration.observe(
+      { method: request.method, route, status_code: reply.statusCode },
+      duration
+    );
+    done();
+  });
 
   // POST /tasks - 创建新任务
   server.post<{ Body: CreateTaskBody }>(
@@ -52,6 +71,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
                 headers: { type: 'object' },
                 followRedirects: { type: 'boolean' },
                 captureScreenshot: { type: 'boolean' },
+                capturePdf: { type: 'boolean' },
                 extractResources: { type: 'boolean' },
                 respectRobotsTxt: { type: 'boolean' },
                 contentSelector: {
@@ -59,6 +79,17 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
                     { type: 'string' },
                     { type: 'array', items: { type: 'string' } },
                   ],
+                },
+                proxy: {
+                  type: 'object',
+                  properties: {
+                    urls: {
+                      type: 'array',
+                      items: { type: 'string', format: 'uri' },
+                      minItems: 1,
+                    },
+                  },
+                  required: ['urls'],
                 },
               },
             },
@@ -96,6 +127,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
 
         await task.save();
         logger.info(`Created task ${task.taskId}`);
+        tasksTotal.inc({ status: TaskStatus.PENDING });
 
         // 添加到队列
         await queueService.addJob(task.taskId, uniqueUrls, options);
@@ -153,11 +185,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
         const task = await Task.findOne({ taskId });
 
         if (!task) {
-          reply.status(404).send({
-            error: 'Not Found',
-            message: `Task ${taskId} not found`,
-          });
-          return;
+          throw new NotFoundError(`Task ${taskId} not found`, 'TASK_NOT_FOUND');
         }
 
         reply.send({
@@ -299,11 +327,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
         const task = await Task.findOne({ taskId });
 
         if (!task) {
-          reply.status(404).send({
-            error: 'Not Found',
-            message: `Task ${taskId} not found`,
-          });
-          return;
+          throw new NotFoundError(`Task ${taskId} not found`, 'TASK_NOT_FOUND');
         }
 
         if (status) {
@@ -314,11 +338,10 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
           };
           const allowed = allowedTransitions[task.status];
           if (!allowed || !allowed.includes(status)) {
-            reply.status(400).send({
-              error: 'Bad Request',
-              message: `Cannot transition from '${task.status}' to '${status}'`,
-            });
-            return;
+            throw new BadRequestError(
+              `Cannot transition from '${task.status}' to '${status}'`,
+              'INVALID_STATE_TRANSITION'
+            );
           }
           task.status = status;
         }
@@ -367,11 +390,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
         const task = await Task.findOne({ taskId });
 
         if (!task) {
-          reply.status(404).send({
-            error: 'Not Found',
-            message: `Task ${taskId} not found`,
-          });
-          return;
+          throw new NotFoundError(`Task ${taskId} not found`, 'TASK_NOT_FOUND');
         }
 
         // 从队列中移除
@@ -438,11 +457,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
         const task = await Task.findOne({ taskId }, 'taskId status progress');
 
         if (!task) {
-          reply.status(404).send({
-            error: 'Not Found',
-            message: `Task ${taskId} not found`,
-          });
-          return;
+          throw new NotFoundError(`Task ${taskId} not found`, 'TASK_NOT_FOUND');
         }
 
         reply.send({
@@ -497,8 +512,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
       try {
         const task = await Task.findOne({ taskId }, 'taskId status result');
         if (!task) {
-          reply.status(404).send({ error: 'Not Found', message: `Task ${taskId} not found` });
-          return;
+          throw new NotFoundError(`Task ${taskId} not found`, 'TASK_NOT_FOUND');
         }
 
         // Filter files by type
@@ -508,18 +522,14 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
         }
 
         if (files.length === 0) {
-          reply
-            .status(404)
-            .send({ error: 'Not Found', message: 'No files available for this task' });
-          return;
+          throw new NotFoundError('No files available for this task', 'NO_FILES');
         }
 
         // Single file download
         if (format === 'single' && files.length === 1) {
           const file = files[0];
           if (!existsSync(file.path)) {
-            reply.status(404).send({ error: 'Not Found', message: 'File not found on disk' });
-            return;
+            throw new NotFoundError('File not found on disk', 'FILE_NOT_ON_DISK');
           }
           const fileStat = await stat(file.path);
           const fileName = path.basename(file.path).replace(/"/g, '\\"');
