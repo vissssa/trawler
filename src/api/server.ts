@@ -2,12 +2,12 @@ process.env.LOG_FILE = process.env.LOG_FILE || 'api.log';
 
 import Fastify, { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
-import multipart from '@fastify/multipart';
 import mongoose from 'mongoose';
 import { config } from '../config';
-import { createLogger } from '../utils/logger';
+import { createLogger, rootLogger } from '../utils/logger';
 import { AppError } from '../errors';
 import { metricsRegistry } from '../services/metrics';
+import { getQueueService } from '../services/queue';
 
 const logger = createLogger('api');
 import { registerTaskRoutes } from './routes';
@@ -16,40 +16,23 @@ import { connectDatabase } from '../services/database';
 // 创建并配置 Fastify 实例
 export async function createServer(): Promise<FastifyInstance> {
   const server = Fastify({
-    logger: {
-      level: config.env === 'production' ? 'info' : 'debug',
-      transport:
-        config.env === 'development'
-          ? {
-              target: 'pino-pretty',
-              options: {
-                translateTime: 'HH:MM:ss Z',
-                ignore: 'pid,hostname',
-              },
-            }
-          : undefined,
-    },
+    // 复用 rootLogger，确保 Fastify 请求日志的格式和输出通道与应用日志一致
+    loggerInstance: rootLogger.child({ name: 'fastify' }) as any,
     requestIdLogLabel: 'reqId',
     disableRequestLogging: false,
-    trustProxy: true,
+    trustProxy: process.env.TRUST_PROXY === 'true',
+    ajv: {
+      customOptions: {
+        removeAdditional: false,
+      },
+    },
   });
 
   // 注册 CORS 插件
+  const corsOrigins = process.env.CORS_ORIGINS;
   await server.register(cors, {
-    origin: true,
+    origin: corsOrigins ? corsOrigins.split(',').map((o) => o.trim()) : true,
     credentials: true,
-  });
-
-  // 注册 multipart 插件（用于文件上传）
-  await server.register(multipart, {
-    limits: {
-      fieldNameSize: 100,
-      fieldSize: 1000000,
-      fields: 10,
-      fileSize: 10000000, // 10MB
-      files: 1,
-      headerPairs: 2000,
-    },
   });
 
   // 健康检查端点
@@ -61,21 +44,28 @@ export async function createServer(): Promise<FastifyInstance> {
     };
   });
 
-  // 就绪检查端点
+  // 就绪检查端点（含 Redis 健康检查）
   server.get('/ready', async (_request: FastifyRequest, reply: FastifyReply) => {
     const dbReady = mongoose.connection.readyState === 1;
-    if (!dbReady) {
+    let redisReady = false;
+    try {
+      redisReady = await getQueueService().ping();
+    } catch {
+      // Redis not available
+    }
+
+    if (!dbReady || !redisReady) {
       reply.status(503).send({
         status: 'not ready',
         timestamp: new Date().toISOString(),
-        checks: { database: false },
+        checks: { database: dbReady, redis: redisReady },
       });
       return;
     }
     return {
       status: 'ready',
       timestamp: new Date().toISOString(),
-      checks: { database: true },
+      checks: { database: true, redis: true },
     };
   });
 
@@ -133,22 +123,28 @@ export async function createServer(): Promise<FastifyInstance> {
     });
   });
 
-  // 404 处理
+  // 404 处理 — 过滤 HTML 特殊字符防止 XSS
   server.setNotFoundHandler((request, reply) => {
+    const safeUrl = request.url.replace(/[<>"'&]/g, '');
     reply.status(404).send({
       error: 'Not Found',
-      message: `Route ${request.method} ${request.url} not found`,
+      message: `Route ${request.method} ${safeUrl} not found`,
     });
   });
 
   // 优雅关闭处理
   const signals = ['SIGINT', 'SIGTERM'];
+  const signalHandlers: Array<() => void> = [];
   signals.forEach((signal) => {
-    process.on(signal, async () => {
+    const handler = async () => {
       logger.info(`Received ${signal}, closing server gracefully...`);
+      // Remove signal listeners to avoid accumulation
+      signalHandlers.forEach((h, i) => process.removeListener(signals[i], h));
       await server.close();
       process.exit(0);
-    });
+    };
+    signalHandlers.push(handler);
+    process.on(signal, handler);
   });
 
   return server;

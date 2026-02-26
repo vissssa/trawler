@@ -127,7 +127,7 @@ describe('createCrawler', () => {
     );
   });
 
-  it('cookie auth 应生成正确的 Cookie header', async () => {
+  it('cookie auth 应通过 Playwright cookie API 设置 cookies', async () => {
     createCrawler('task_9', {
       auth: {
         type: 'cookie',
@@ -137,12 +137,20 @@ describe('createCrawler', () => {
 
     const crawlerOpts = MockPlaywrightCrawler.mock.calls[0][0];
     const hook = crawlerOpts?.preNavigationHooks?.[0];
-    const mockPage = { setExtraHTTPHeaders: jest.fn() };
+    const mockAddCookies = jest.fn();
+    const mockPage = {
+      setExtraHTTPHeaders: jest.fn(),
+      url: jest.fn().mockReturnValue('https://example.com'),
+      context: jest.fn().mockReturnValue({ addCookies: mockAddCookies }),
+    };
     await (hook as any)({ page: mockPage, request: { url: 'https://example.com' } });
 
-    expect(mockPage.setExtraHTTPHeaders).toHaveBeenCalledWith(
-      expect.objectContaining({ Cookie: 'session=abc123; lang=zh' })
-    );
+    expect(mockAddCookies).toHaveBeenCalledWith([
+      { name: 'session', value: 'abc123', domain: 'example.com', path: '/' },
+      { name: 'lang', value: 'zh', domain: 'example.com', path: '/' },
+    ]);
+    // Cookie auth should not set extra headers
+    expect(mockPage.setExtraHTTPHeaders).not.toHaveBeenCalled();
   });
 
   it('应该将 proxy.urls 传递给 ProxyConfiguration', () => {

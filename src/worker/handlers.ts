@@ -9,12 +9,15 @@ import type { CrawlOptions } from '../models/Task';
 import { config } from '../config';
 import { createLogger } from '../utils/logger';
 import { pagesCrawledTotal } from '../services/metrics';
+import { assertValidTaskId } from '../utils/validation';
 
 const logger = createLogger('worker:handlers');
 const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
 
 // Remove script/style/noscript tags from Markdown output
 turndown.remove(['script', 'style', 'noscript']);
+
+const MAX_SCREENSHOT_HEIGHT = 16384;
 
 export function md5(input: string): string {
   return createHash('md5').update(input).digest('hex');
@@ -65,18 +68,17 @@ export function resolveRelativeUrls(html: string, baseUrl: string): string {
 }
 
 export function createRequestHandler(taskId: string, options: CrawlOptions = {}) {
+  assertValidTaskId(taskId);
+
   return async (ctx: PlaywrightCrawlingContext) => {
     const { page, request, enqueueLinks } = ctx;
     const url = request.url;
 
     logger.info({ taskId, url }, 'Processing page');
 
-    // Update current URL in progress
-    await Task.updateOne({ taskId }, { $set: { 'progress.currentUrl': url } });
-
     // Wait for dynamic content to finish rendering
-    await page.waitForLoadState('networkidle').catch(() => {
-      logger.debug({ taskId, url }, 'networkidle timeout, proceeding with current content');
+    await page.waitForLoadState('domcontentloaded').catch(() => {
+      logger.debug({ taskId, url }, 'domcontentloaded timeout, proceeding with current content');
     });
 
     // Get page HTML
@@ -136,7 +138,21 @@ export function createRequestHandler(taskId: string, options: CrawlOptions = {})
     if (options.captureScreenshot) {
       const screenshotFileName = `${md5(url)}.png`;
       const screenshotPath = path.join(taskDir, screenshotFileName);
-      await page.screenshot({ path: screenshotPath, fullPage: true });
+
+      // Check page height — fallback to viewport screenshot if too tall
+      let useFullPage = true;
+      try {
+        const bodyHeight = await page.evaluate(() => document.body.scrollHeight);
+        if (bodyHeight > MAX_SCREENSHOT_HEIGHT) {
+          logger.debug({ taskId, url, bodyHeight }, 'Page too tall for fullPage screenshot, using viewport');
+          useFullPage = false;
+        }
+      } catch {
+        // If evaluation fails, default to viewport screenshot
+        useFullPage = false;
+      }
+
+      await page.screenshot({ path: screenshotPath, fullPage: useFullPage });
       const screenshotStat = await fsStat(screenshotPath);
       filesToPush.push({
         type: 'screenshot',
@@ -166,11 +182,12 @@ export function createRequestHandler(taskId: string, options: CrawlOptions = {})
       logger.debug({ taskId, url, pdfPath }, 'PDF captured');
     }
 
-    // Atomic update: increment progress and push file results
+    // Atomic update: increment progress, push file results, and set currentUrl
     await Task.updateOne(
       { taskId },
       {
         $inc: { 'progress.completed': 1, 'result.stats.success': 1 },
+        $set: { 'progress.currentUrl': url },
         $push: {
           'result.files': {
             $each: filesToPush,

@@ -1,10 +1,24 @@
-import { PlaywrightCrawler, Configuration, ProxyConfiguration } from 'crawlee';
+import { PlaywrightCrawler, Configuration, ProxyConfiguration, log as crawleeLog, LogLevel as CrawleeLogLevel } from 'crawlee';
 import type { CrawlOptions } from '../models/Task';
 import { config } from '../config';
 import { createLogger } from '../utils/logger';
 import { createRequestHandler, createFailedRequestHandler } from './handlers';
 
 const logger = createLogger('worker:crawler');
+
+// 将 pino 日志级别映射到 Crawlee 日志级别，保持两者一致
+const pinoToCrawleeLevel: Record<string, CrawleeLogLevel> = {
+  fatal: CrawleeLogLevel.OFF,
+  error: CrawleeLogLevel.ERROR,
+  warn: CrawleeLogLevel.WARNING,
+  info: CrawleeLogLevel.INFO,
+  debug: CrawleeLogLevel.DEBUG,
+  trace: CrawleeLogLevel.DEBUG,
+  silent: CrawleeLogLevel.OFF,
+};
+
+const appLogLevel = process.env.LOG_LEVEL || 'info';
+crawleeLog.setLevel(pinoToCrawleeLevel[appLogLevel] ?? CrawleeLogLevel.INFO);
 
 export function createCrawler(taskId: string, options: CrawlOptions): PlaywrightCrawler {
   // Each task gets its own Crawlee Configuration to avoid state pollution
@@ -51,11 +65,18 @@ export function createCrawler(taskId: string, options: CrawlOptions): Playwright
             break;
           }
           case 'cookie': {
+            // Use Playwright's cookie API instead of header for proper cookie handling
             if (options.auth.credentials.cookies) {
-              const cookieStr = Object.entries(options.auth.credentials.cookies)
-                .map(([k, v]) => `${k}=${v}`)
-                .join('; ');
-              extraHeaders['Cookie'] = cookieStr;
+              const url = new URL(page.url() || 'http://localhost');
+              const cookies = Object.entries(options.auth.credentials.cookies).map(
+                ([name, value]) => ({
+                  name,
+                  value,
+                  domain: url.hostname,
+                  path: '/',
+                })
+              );
+              await page.context().addCookies(cookies);
             }
             break;
           }
@@ -107,6 +128,17 @@ export function createCrawler(taskId: string, options: CrawlOptions): Playwright
     crawleeConfig
   );
 
-  logger.info({ taskId, options }, 'Created crawler');
+  // Log with redacted sensitive fields
+  const safeOptions: Record<string, unknown> = { ...options };
+  if (safeOptions.auth) {
+    safeOptions.auth = { type: (options.auth as { type: string }).type, credentials: '[REDACTED]' };
+  }
+  if (safeOptions.headers) {
+    safeOptions.headers = '[REDACTED]';
+  }
+  if (safeOptions.proxy) {
+    safeOptions.proxy = { urls: '[REDACTED]' };
+  }
+  logger.info({ taskId, options: safeOptions }, 'Created crawler');
   return crawler;
 }

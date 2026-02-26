@@ -9,6 +9,7 @@ import { config } from '../config';
 import { createLogger } from '../utils/logger';
 import { NotFoundError, BadRequestError } from '../errors';
 import { httpRequestDuration, tasksTotal } from '../services/metrics';
+import { assertValidTaskId, assertPathInsideDataDir } from '../utils/validation';
 
 const logger = createLogger('api:routes');
 
@@ -63,12 +64,13 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
             },
             options: {
               type: 'object',
+              additionalProperties: false,
               properties: {
                 maxDepth: { type: 'number', minimum: 1 },
                 maxPages: { type: 'number', minimum: 1 },
                 timeout: { type: 'number', minimum: 1000 },
                 userAgent: { type: 'string' },
-                headers: { type: 'object' },
+                headers: { type: 'object', additionalProperties: { type: 'string' } },
                 followRedirects: { type: 'boolean' },
                 captureScreenshot: { type: 'boolean' },
                 capturePdf: { type: 'boolean' },
@@ -112,37 +114,39 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
       const { urls, options = {} } = request.body;
       const uniqueUrls = [...new Set(urls)];
 
+      // 创建任务文档
+      const task = new Task({
+        urls: uniqueUrls,
+        options,
+        status: TaskStatus.PENDING,
+        progress: {
+          completed: 0,
+          total: uniqueUrls.length,
+          failed: 0,
+        },
+      });
+
+      await task.save();
+      logger.info(`Created task ${task.taskId}`);
+      tasksTotal.inc({ status: TaskStatus.PENDING });
+
       try {
-        // 创建任务文档
-        const task = new Task({
-          urls: uniqueUrls,
-          options,
-          status: TaskStatus.PENDING,
-          progress: {
-            completed: 0,
-            total: uniqueUrls.length,
-            failed: 0,
-          },
-        });
-
-        await task.save();
-        logger.info(`Created task ${task.taskId}`);
-        tasksTotal.inc({ status: TaskStatus.PENDING });
-
         // 添加到队列
         await queueService.addJob(task.taskId, uniqueUrls, options);
         logger.info(`Added task ${task.taskId} to queue`);
-
-        reply.status(201).send({
-          taskId: task.taskId,
-          status: task.status,
-          urls: task.urls,
-          createdAt: task.createdAt.toISOString(),
-        });
       } catch (error) {
-        logger.error(`Failed to create task: ${(error as Error).message}`);
+        // 队列添加失败，回滚 MongoDB 文档
+        logger.error(`Failed to add task ${task.taskId} to queue, rolling back: ${(error as Error).message}`);
+        await Task.deleteOne({ taskId: task.taskId });
         throw error;
       }
+
+      reply.status(201).send({
+        taskId: task.taskId,
+        status: task.status,
+        urls: task.urls,
+        createdAt: task.createdAt.toISOString(),
+      });
     }
   );
 
@@ -165,9 +169,9 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
               taskId: { type: 'string' },
               urls: { type: 'array', items: { type: 'string' } },
               status: { type: 'string' },
-              options: { type: 'object' },
-              progress: { type: 'object' },
-              result: { type: 'object' },
+              options: { type: 'object', additionalProperties: true },
+              progress: { type: 'object', additionalProperties: true },
+              result: { type: 'object', additionalProperties: true },
               createdAt: { type: 'string' },
               updatedAt: { type: 'string' },
               startedAt: { type: 'string', nullable: true },
@@ -180,6 +184,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
     },
     async (request: FastifyRequest<{ Params: TaskIdParams }>, reply: FastifyReply) => {
       const { taskId } = request.params;
+      assertValidTaskId(taskId);
 
       try {
         const task = await Task.findOne({ taskId });
@@ -188,13 +193,25 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
           throw new NotFoundError(`Task ${taskId} not found`, 'TASK_NOT_FOUND');
         }
 
+        // 脱敏：result.files[].path 只返回 basename
+        const taskObj = task.toJSON();
+        const sanitizedResult = taskObj.result
+          ? {
+              ...taskObj.result,
+              files: (taskObj.result.files || []).map((f: any) => ({
+                ...f,
+                path: path.basename(f.path),
+              })),
+            }
+          : taskObj.result;
+
         reply.send({
           taskId: task.taskId,
           urls: task.urls,
           status: task.status,
           options: task.options,
           progress: task.progress,
-          result: task.result,
+          result: sanitizedResult,
           createdAt: task.createdAt.toISOString(),
           updatedAt: task.updatedAt.toISOString(),
           startedAt: task.startedAt?.toISOString(),
@@ -202,6 +219,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
           errorMessage: task.errorMessage,
         });
       } catch (error) {
+        if (error instanceof BadRequestError || error instanceof NotFoundError) throw error;
         logger.error(`Failed to get task ${taskId}: ${(error as Error).message}`);
         throw error;
       }
@@ -239,7 +257,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
                     taskId: { type: 'string' },
                     urls: { type: 'array', items: { type: 'string' } },
                     status: { type: 'string' },
-                    progress: { type: 'object' },
+                    progress: { type: 'object', additionalProperties: true },
                     createdAt: { type: 'string' },
                   },
                 },
@@ -254,7 +272,8 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
     },
     async (request, reply: FastifyReply) => {
       const { status, limit = '10', offset = '0' } = request.query;
-      const limitNum = Math.min(parseInt(limit, 10) || 10, 100);
+      const parsedLimit = parseInt(limit, 10);
+      const limitNum = Math.min(parsedLimit > 0 ? parsedLimit : 10, 100);
       const offsetNum = parseInt(offset, 10) || 0;
 
       try {
@@ -321,6 +340,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
       reply: FastifyReply
     ) => {
       const { taskId } = request.params;
+      assertValidTaskId(taskId);
       const { status } = request.body;
 
       try {
@@ -344,6 +364,15 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
             );
           }
           task.status = status;
+          task.completedAt = new Date();
+          task.errorMessage = 'Cancelled by user';
+
+          // Best-effort remove from queue
+          try {
+            await queueService.removeJob(taskId);
+          } catch (err) {
+            logger.warn(`Failed to remove job ${taskId} from queue: ${(err as Error).message}`);
+          }
         }
 
         await task.save();
@@ -355,6 +384,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
           updatedAt: task.updatedAt.toISOString(),
         });
       } catch (error) {
+        if (error instanceof BadRequestError || error instanceof NotFoundError) throw error;
         logger.error(`Failed to update task ${taskId}: ${(error as Error).message}`);
         throw error;
       }
@@ -385,6 +415,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
     },
     async (request: FastifyRequest<{ Params: TaskIdParams }>, reply: FastifyReply) => {
       const { taskId } = request.params;
+      assertValidTaskId(taskId);
 
       try {
         const task = await Task.findOne({ taskId });
@@ -398,6 +429,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
 
         // 删除磁盘上的爬取文件
         const taskDir = path.join(config.storage.dataDir, taskId);
+        assertPathInsideDataDir(taskDir);
         try {
           await rm(taskDir, { recursive: true, force: true });
         } catch {
@@ -412,6 +444,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
           message: `Task ${taskId} deleted successfully`,
         });
       } catch (error) {
+        if (error instanceof BadRequestError || error instanceof NotFoundError) throw error;
         logger.error(`Failed to delete task ${taskId}: ${(error as Error).message}`);
         throw error;
       }
@@ -452,6 +485,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
     },
     async (request: FastifyRequest<{ Params: TaskIdParams }>, reply: FastifyReply) => {
       const { taskId } = request.params;
+      assertValidTaskId(taskId);
 
       try {
         const task = await Task.findOne({ taskId }, 'taskId status progress');
@@ -466,6 +500,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
           progress: task.progress,
         });
       } catch (error) {
+        if (error instanceof BadRequestError || error instanceof NotFoundError) throw error;
         logger.error(`Failed to get task progress ${taskId}: ${(error as Error).message}`);
         throw error;
       }
@@ -499,7 +534,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
         querystring: {
           type: 'object',
           properties: {
-            type: { type: 'string', enum: ['html', 'markdown', 'all'], default: 'all' },
+            type: { type: 'string', enum: ['html', 'markdown', 'screenshot', 'pdf', 'all'], default: 'all' },
             format: { type: 'string', enum: ['zip', 'single'], default: 'zip' },
           },
         },
@@ -507,6 +542,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
     },
     async (request, reply) => {
       const { taskId } = request.params;
+      assertValidTaskId(taskId);
       const { type = 'all', format = 'zip' } = request.query;
 
       try {
@@ -528,6 +564,7 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
         // Single file download
         if (format === 'single' && files.length === 1) {
           const file = files[0];
+          assertPathInsideDataDir(file.path);
           if (!existsSync(file.path)) {
             throw new NotFoundError('File not found on disk', 'FILE_NOT_ON_DISK');
           }
@@ -540,32 +577,27 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
           return reply.send(createReadStream(file.path));
         }
 
-        // Zip download — collect into buffer and send via Fastify reply
+        // Zip download — 流式输出，避免全量内存缓冲
         const archive = archiver('zip', { zlib: { level: 6 } });
 
-        const chunks: Buffer[] = [];
-        archive.on('data', (chunk: Buffer) => chunks.push(chunk));
-
-        const archiveFinished = new Promise<Buffer>((resolve, reject) => {
-          archive.on('end', () => resolve(Buffer.concat(chunks)));
-          archive.on('error', reject);
+        reply.raw.writeHead(200, {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': `attachment; filename="${taskId}.zip"`,
+          'Transfer-Encoding': 'chunked',
         });
 
+        archive.pipe(reply.raw);
+
         for (const file of files) {
+          assertPathInsideDataDir(file.path);
           if (existsSync(file.path)) {
             archive.file(file.path, { name: path.basename(file.path) });
           }
         }
 
         await archive.finalize();
-        const zipBuffer = await archiveFinished;
-
-        return reply
-          .header('Content-Type', 'application/zip')
-          .header('Content-Disposition', `attachment; filename="${taskId}.zip"`)
-          .header('Content-Length', zipBuffer.length)
-          .send(zipBuffer);
       } catch (error) {
+        if (error instanceof BadRequestError || error instanceof NotFoundError) throw error;
         logger.error(`Failed to download files for ${taskId}: ${(error as Error).message}`);
         throw error;
       }

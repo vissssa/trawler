@@ -6,6 +6,8 @@ import { createLogger } from '../utils/logger';
 
 const logger = createLogger('scheduler:cleanup');
 
+const BATCH_SIZE = 100;
+
 /**
  * Mark tasks that have been RUNNING longer than maxTimeoutMs as TIMEOUT.
  */
@@ -64,40 +66,52 @@ export async function cleanupOrphanedTasks(): Promise<number> {
 /**
  * Delete completed/failed/timeout tasks older than retentionDays,
  * along with their data files on disk.
+ * Processes in batches to avoid loading all expired tasks at once.
  */
 export async function cleanupExpiredTasks(): Promise<number> {
   const cutoff = new Date(Date.now() - config.task.retentionDays * 24 * 60 * 60 * 1000);
+  let totalDeleted = 0;
 
-  // Find expired tasks to delete their files
-  const expiredTasks = await Task.find(
-    {
-      status: { $in: [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.TIMEOUT] },
-      completedAt: { $lt: cutoff },
-    },
-    'taskId'
-  );
+  // Process in batches
+  while (true) {
+    const expiredTasks = await Task.find(
+      {
+        status: { $in: [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.TIMEOUT] },
+        completedAt: { $lt: cutoff },
+      },
+      'taskId'
+    ).limit(BATCH_SIZE);
 
-  if (expiredTasks.length === 0) {
-    return 0;
-  }
+    if (expiredTasks.length === 0) {
+      break;
+    }
 
-  // Delete data files for each task
-  for (const task of expiredTasks) {
-    const taskDir = path.join(config.storage.dataDir, task.taskId);
-    try {
-      await rm(taskDir, { recursive: true, force: true });
-      logger.debug({ taskId: task.taskId }, 'Deleted task data directory');
-    } catch (error) {
-      logger.warn({ taskId: task.taskId, error: (error as Error).message }, 'Failed to delete task data');
+    // Delete DB records first (authoritative source)
+    const taskIds = expiredTasks.map((t) => t.taskId);
+    const result = await Task.deleteMany({ taskId: { $in: taskIds } });
+    totalDeleted += result.deletedCount;
+
+    // Then delete data files (best-effort)
+    for (const task of expiredTasks) {
+      const taskDir = path.join(config.storage.dataDir, task.taskId);
+      try {
+        await rm(taskDir, { recursive: true, force: true });
+        logger.debug({ taskId: task.taskId }, 'Deleted task data directory');
+      } catch (error) {
+        logger.warn({ taskId: task.taskId, error: (error as Error).message }, 'Failed to delete task data');
+      }
+    }
+
+    // If we got fewer than BATCH_SIZE, we're done
+    if (expiredTasks.length < BATCH_SIZE) {
+      break;
     }
   }
 
-  // Delete task records from MongoDB
-  const taskIds = expiredTasks.map((t) => t.taskId);
-  const result = await Task.deleteMany({ taskId: { $in: taskIds } });
-
-  logger.info({ count: result.deletedCount }, 'Cleaned up expired tasks');
-  return result.deletedCount;
+  if (totalDeleted > 0) {
+    logger.info({ count: totalDeleted }, 'Cleaned up expired tasks');
+  }
+  return totalDeleted;
 }
 
 /**

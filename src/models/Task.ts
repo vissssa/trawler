@@ -179,6 +179,9 @@ function generateTaskId(): string {
 // 索引配置
 taskSchema.index({ createdAt: 1 });
 taskSchema.index({ status: 1, createdAt: -1 });
+taskSchema.index({ status: 1, startedAt: 1 });
+taskSchema.index({ status: 1, updatedAt: 1 });
+taskSchema.index({ status: 1, completedAt: 1 });
 
 // 导出模型
 export const Task = mongoose.model<TaskDocument>('Task', taskSchema);

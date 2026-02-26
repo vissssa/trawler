@@ -32,9 +32,14 @@ jest.mock('../../src/utils/logger', () => {
     error: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
+    fatal: jest.fn(),
+    trace: jest.fn(),
+    child: jest.fn().mockReturnThis(),
+    level: 'info',
   };
   return {
     createLogger: jest.fn(() => mockLogger),
+    rootLogger: mockLogger,
     logger: mockLogger,
   };
 });
@@ -45,6 +50,7 @@ jest.mock('../../src/services/queue', () => ({
     addJob: jest.fn(),
     removeJob: jest.fn(),
     getStats: jest.fn(),
+    ping: jest.fn().mockResolvedValue(true),
   })),
 }));
 
@@ -83,6 +89,8 @@ describe('Fastify Server', () => {
       const body = JSON.parse(response.body);
       expect(body.status).toBe('ready');
       expect(body.timestamp).toBeDefined();
+      expect(body.checks.database).toBe(true);
+      expect(body.checks.redis).toBe(true);
     });
   });
 
@@ -194,20 +202,6 @@ describe('Fastify Server', () => {
   describe('Server Configuration', () => {
     it('should have logger configured', () => {
       expect(server.log).toBeDefined();
-    });
-
-    it('should have multipart plugin registered', async () => {
-      // Verify multipart is available by checking if we can handle multipart requests
-      const response = await server.inject({
-        method: 'POST',
-        url: '/health',
-        headers: {
-          'content-type': 'multipart/form-data; boundary=----test',
-        },
-      });
-
-      // Should not crash with multipart content-type
-      expect(response).toBeDefined();
     });
   });
 });

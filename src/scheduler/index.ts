@@ -30,6 +30,20 @@ async function runOneCycle(
   }
 }
 
+/** Sleep that can be interrupted by calling the returned abort function */
+function interruptibleSleep(ms: number): { promise: Promise<void>; abort: () => void } {
+  let timer: NodeJS.Timeout;
+  let abortFn: () => void;
+  const promise = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+    abortFn = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+  });
+  return { promise, abort: abortFn! };
+}
+
 async function main(): Promise<void> {
   logger.info('Starting scheduler...');
 
@@ -47,11 +61,16 @@ async function main(): Promise<void> {
   }
 
   let running = true;
+  let currentSleep: { abort: () => void } | null = null;
 
   // Graceful shutdown
   const shutdown = async () => {
     logger.info('Shutting down scheduler...');
     running = false;
+    // Wake up the sleep timer immediately
+    if (currentSleep) {
+      currentSleep.abort();
+    }
     try {
       if (leaderService) {
         await leaderService.close();
@@ -60,7 +79,6 @@ async function main(): Promise<void> {
     } catch (error) {
       logger.error({ error: (error as Error).message }, 'Error during shutdown');
     }
-    process.exit(0);
   };
 
   process.on('SIGINT', shutdown);
@@ -76,9 +94,17 @@ async function main(): Promise<void> {
       logger.error({ error: (error as Error).message }, 'Error in cleanup cycle');
     }
 
-    // Wait for next cycle
-    await new Promise((resolve) => setTimeout(resolve, CLEANUP_INTERVAL_MS));
+    if (!running) break;
+
+    // Wait for next cycle (interruptible)
+    const sleep = interruptibleSleep(CLEANUP_INTERVAL_MS);
+    currentSleep = sleep;
+    await sleep.promise;
+    currentSleep = null;
   }
+
+  logger.info('Scheduler loop exited');
+  process.exit(0);
 }
 
 // Run directly

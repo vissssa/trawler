@@ -7,12 +7,14 @@ jest.mock('bullmq');
 jest.mock('ioredis');
 jest.mock('../../src/services/database', () => ({
   connectDatabase: jest.fn().mockResolvedValue(undefined),
+  disconnectDatabase: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../src/models/Task');
 jest.mock('../../src/worker/crawler');
 jest.mock('../../src/config', () => ({
   config: {
     redis: { url: 'redis://localhost:6379' },
+    storage: { dataDir: '/tmp/test-data' },
   },
 }));
 jest.mock('../../src/utils/logger', () => {
@@ -174,7 +176,7 @@ describe('consumer', () => {
       expect(firstCall[1].$set.result).toEqual({
         files: [],
         errors: [],
-        stats: { success: 0, failed: 0 },
+        stats: { success: 0, failed: 0, skipped: 0 },
       });
     });
   });

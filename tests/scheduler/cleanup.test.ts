@@ -89,32 +89,39 @@ describe('scheduler cleanup', () => {
         { taskId: 'task_old1' },
         { taskId: 'task_old2' },
       ];
-      (Task.find as jest.Mock).mockResolvedValue(expiredTasks);
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue(expiredTasks),
+      });
       (Task.deleteMany as jest.Mock).mockResolvedValue({ deletedCount: 2 });
       (rm as jest.Mock).mockResolvedValue(undefined);
 
       const count = await cleanupExpiredTasks();
 
       expect(count).toBe(2);
+      // DB records deleted first, then files
+      expect(Task.deleteMany).toHaveBeenCalledWith({
+        taskId: { $in: ['task_old1', 'task_old2'] },
+      });
       expect(rm).toHaveBeenCalledTimes(2);
       expect(rm).toHaveBeenCalledWith(
         expect.stringContaining('task_old1'),
         { recursive: true, force: true }
       );
-      expect(Task.deleteMany).toHaveBeenCalledWith({
-        taskId: { $in: ['task_old1', 'task_old2'] },
-      });
     });
 
     it('无过期任务时应返回 0', async () => {
-      (Task.find as jest.Mock).mockResolvedValue([]);
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([]),
+      });
 
       const count = await cleanupExpiredTasks();
       expect(count).toBe(0);
     });
 
     it('文件删除失败时应继续删除 MongoDB 记录', async () => {
-      (Task.find as jest.Mock).mockResolvedValue([{ taskId: 'task_broken' }]);
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([{ taskId: 'task_broken' }]),
+      });
       (Task.deleteMany as jest.Mock).mockResolvedValue({ deletedCount: 1 });
       (rm as jest.Mock).mockRejectedValue(new Error('ENOENT'));
 
@@ -126,9 +133,11 @@ describe('scheduler cleanup', () => {
   });
 
   describe('runAllCleanups', () => {
-    it('应该并行执行所有清理策略', async () => {
+    it('应该依次执行所有清理策略', async () => {
       (Task.updateMany as jest.Mock).mockResolvedValue({ modifiedCount: 0 });
-      (Task.find as jest.Mock).mockResolvedValue([]);
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([]),
+      });
 
       await runAllCleanups();
 

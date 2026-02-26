@@ -25,6 +25,10 @@ export class LeaderElectionService {
       maxRetriesPerRequest: null,
     });
 
+    this.redis.on('error', (err) => {
+      logger.error({ error: err.message }, 'Redis connection error (leader-election)');
+    });
+
     // 创建 Redlock 实例
     // automaticExtensionThreshold: 当锁剩余时间小于此值时自动续期
     // 设为 lockTTL / 2，确保在锁过期前充分续期
@@ -45,6 +49,12 @@ export class LeaderElectionService {
       // 忽略获取锁失败的重试错误（正常竞争行为）
       if (error.message.includes('The operation was unable to achieve a quorum')) {
         logger.debug(`Redlock contention: ${error.message}`);
+        // Quorum failure — if we thought we were leader, conservatively step down
+        if (this.isLeader) {
+          logger.warn('Stepping down as leader due to quorum failure');
+          this.isLeader = false;
+          this.currentLock = null;
+        }
       } else {
         logger.warn(`Redlock error: ${error.message}`);
         // Lock extension failure — reset leader status to prevent split-brain
@@ -94,15 +104,12 @@ export class LeaderElectionService {
     return this.isLeader;
   }
 
-  // 获取当前leader的podName
-  async getCurrentLeader(): Promise<string | null> {
-    try {
-      const value = await this.redis.get(this.lockKey);
-      return value;
-    } catch (error) {
-      logger.error(`Failed to get current leader: ${(error as Error).message}`);
-      return null;
+  // 获取当前leader信息
+  getCurrentLeader(): string {
+    if (this.isLeader) {
+      return this.podName;
     }
+    return 'unknown';
   }
 
   // 等待成为leader

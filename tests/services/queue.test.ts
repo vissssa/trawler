@@ -3,7 +3,20 @@ import { Queue, QueueEvents } from 'bullmq';
 
 // Mock dependencies
 jest.mock('bullmq');
-jest.mock('ioredis');
+jest.mock('ioredis', () => {
+  const mockRedisInstance = {
+    on: jest.fn().mockReturnThis(),
+    quit: jest.fn().mockResolvedValue('OK'),
+    ping: jest.fn().mockResolvedValue('PONG'),
+    duplicate: jest.fn(),
+  };
+  // duplicate returns a new mock with same shape
+  mockRedisInstance.duplicate.mockReturnValue({
+    on: jest.fn().mockReturnThis(),
+    quit: jest.fn().mockResolvedValue('OK'),
+  });
+  return jest.fn(() => mockRedisInstance);
+});
 jest.mock('../../src/config', () => ({
   config: {
     redis: {
@@ -110,17 +123,34 @@ describe('QueueService', () => {
   });
 
   describe('removeJob', () => {
-    it('should remove a job from the queue', async () => {
+    it('should remove a waiting job from the queue', async () => {
       const mockJob = {
         id: 'task_123',
         remove: jest.fn(),
+        getState: jest.fn().mockResolvedValue('waiting'),
       };
       mockQueue.getJob.mockResolvedValue(mockJob as any);
 
       await queueService.removeJob('task_123');
 
       expect(mockQueue.getJob).toHaveBeenCalledWith('task_123');
+      expect(mockJob.getState).toHaveBeenCalled();
       expect(mockJob.remove).toHaveBeenCalled();
+    });
+
+    it('should move active job to failed', async () => {
+      const mockJob = {
+        id: 'task_123',
+        remove: jest.fn(),
+        getState: jest.fn().mockResolvedValue('active'),
+        moveToFailed: jest.fn(),
+      };
+      mockQueue.getJob.mockResolvedValue(mockJob as any);
+
+      await queueService.removeJob('task_123');
+
+      expect(mockJob.moveToFailed).toHaveBeenCalled();
+      expect(mockJob.remove).not.toHaveBeenCalled();
     });
 
     it('should handle removing non-existent job', async () => {
@@ -203,15 +233,20 @@ describe('QueueService', () => {
       const mockConnection = {
         quit: jest.fn().mockResolvedValue('OK'),
       };
+      const mockEventsConnection = {
+        quit: jest.fn().mockResolvedValue('OK'),
+      };
 
-      // Access the private connection field for testing
+      // Access the private connection fields for testing
       (queueService as any).connection = mockConnection;
+      (queueService as any).queueEventsConnection = mockEventsConnection;
 
       await queueService.close();
 
       expect(mockQueue.close).toHaveBeenCalled();
       expect(mockQueueEvents.close).toHaveBeenCalled();
       expect(mockConnection.quit).toHaveBeenCalled();
+      expect(mockEventsConnection.quit).toHaveBeenCalled();
     });
   });
 

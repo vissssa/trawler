@@ -37,9 +37,14 @@ jest.mock('../../src/utils/logger', () => {
     error: jest.fn(),
     debug: jest.fn(),
     warn: jest.fn(),
+    fatal: jest.fn(),
+    trace: jest.fn(),
+    child: jest.fn().mockReturnThis(),
+    level: 'info',
   };
   return {
     createLogger: jest.fn(() => mockLogger),
+    rootLogger: mockLogger,
     logger: mockLogger,
   };
 });
@@ -56,6 +61,7 @@ describe('Task Management API', () => {
       addJob: jest.fn(),
       removeJob: jest.fn(),
       getStats: jest.fn(),
+      ping: jest.fn().mockResolvedValue(true),
     };
     (getQueueService as jest.Mock).mockReturnValue(mockQueueService);
 
@@ -180,6 +186,7 @@ describe('Task Management API', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
         startedAt: new Date(),
+        toJSON: function () { return { ...this, toJSON: undefined }; },
       };
 
       (Task.findOne as jest.Mock).mockResolvedValue(mockTask);
@@ -201,7 +208,7 @@ describe('Task Management API', () => {
 
       const response = await server.inject({
         method: 'GET',
-        url: '/tasks/nonexistent',
+        url: '/tasks/task_nonexistent',
       });
 
       expect(response.statusCode).toBe(404);
@@ -333,7 +340,7 @@ describe('Task Management API', () => {
 
       const response = await server.inject({
         method: 'PATCH',
-        url: '/tasks/nonexistent',
+        url: '/tasks/task_nonexistent',
         payload: {
           status: TaskStatus.FAILED,
         },
@@ -370,7 +377,7 @@ describe('Task Management API', () => {
 
       const response = await server.inject({
         method: 'DELETE',
-        url: '/tasks/nonexistent',
+        url: '/tasks/task_nonexistent',
       });
 
       expect(response.statusCode).toBe(404);
@@ -393,8 +400,6 @@ describe('Task Management API', () => {
       // Clear any previous mocks and handle field selection
       (Task.findOne as jest.Mock).mockReset();
       (Task.findOne as jest.Mock).mockImplementation((query, fields) => {
-        // Always return the full mock object with all fields
-        // Mongoose handles field projection, but in testing we just return everything
         return Promise.resolve(mockTask);
       });
 
@@ -417,7 +422,7 @@ describe('Task Management API', () => {
 
       const response = await server.inject({
         method: 'GET',
-        url: '/tasks/nonexistent/progress',
+        url: '/tasks/task_nonexistent/progress',
       });
 
       expect(response.statusCode).toBe(404);
@@ -452,24 +457,19 @@ describe('Task Management API', () => {
     let mockArchive: any;
 
     beforeEach(() => {
-      const eventHandlers: Record<string, Function> = {};
       mockArchive = {
         file: jest.fn(),
-        finalize: jest.fn().mockImplementation(() => {
-          // Simulate archiver emitting data then end
-          if (eventHandlers['data']) {
-            eventHandlers['data'](Buffer.from('PK mock zip'));
-          }
-          if (eventHandlers['end']) {
-            eventHandlers['end']();
-          }
-          return Promise.resolve();
-        }),
-        on: jest.fn().mockImplementation((event: string, handler: Function) => {
-          eventHandlers[event] = handler;
-          return mockArchive;
-        }),
+        finalize: jest.fn(),
+        pipe: jest.fn(),
+        on: jest.fn().mockReturnThis(),
       };
+      // When pipe is called, schedule stream end so server.inject() can complete
+      mockArchive.pipe.mockImplementation((stream: any) => {
+        // End the raw stream after finalize resolves
+        mockArchive.finalize.mockImplementation(async () => {
+          stream.end();
+        });
+      });
       (archiver as unknown as jest.Mock).mockReturnValue(mockArchive);
       (existsSync as jest.Mock).mockReturnValue(true);
     });
@@ -479,7 +479,7 @@ describe('Task Management API', () => {
 
       const response = await server.inject({
         method: 'GET',
-        url: '/tasks/nonexistent/files',
+        url: '/tasks/task_nonexistent/files',
       });
 
       expect(response.statusCode).toBe(404);
@@ -509,8 +509,8 @@ describe('Task Management API', () => {
         status: 'completed',
         result: {
           files: [
-            { type: 'html', url: 'https://example.com', path: '/data/a.html', size: 100, mimeType: 'text/html' },
-            { type: 'markdown', url: 'https://example.com', path: '/data/a.md', size: 50, mimeType: 'text/markdown' },
+            { type: 'html', url: 'https://example.com', path: '/tmp/test-data/task_filter/a.html', size: 100, mimeType: 'text/html' },
+            { type: 'markdown', url: 'https://example.com', path: '/tmp/test-data/task_filter/a.md', size: 50, mimeType: 'text/markdown' },
           ],
         },
       };
@@ -521,9 +521,8 @@ describe('Task Management API', () => {
         url: '/tasks/task_filter/files?type=markdown',
       });
 
-      // archive.file should only be called once (only markdown file)
       expect(mockArchive.file).toHaveBeenCalledTimes(1);
-      expect(mockArchive.file).toHaveBeenCalledWith('/data/a.md', { name: 'a.md' });
+      expect(mockArchive.file).toHaveBeenCalledWith('/tmp/test-data/task_filter/a.md', { name: 'a.md' });
     });
 
     it('默认应该返回 zip 格式', async () => {
@@ -532,7 +531,7 @@ describe('Task Management API', () => {
         status: 'completed',
         result: {
           files: [
-            { type: 'html', url: 'https://example.com', path: '/data/a.html', size: 100, mimeType: 'text/html' },
+            { type: 'html', url: 'https://example.com', path: '/tmp/test-data/task_zip/a.html', size: 100, mimeType: 'text/html' },
           ],
         },
       };

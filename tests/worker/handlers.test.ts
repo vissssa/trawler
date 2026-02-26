@@ -102,6 +102,7 @@ describe('createRequestHandler', () => {
         waitForLoadState: jest.fn().mockResolvedValue(undefined),
         screenshot: jest.fn().mockResolvedValue(undefined),
         pdf: jest.fn().mockResolvedValue(undefined),
+        evaluate: jest.fn().mockResolvedValue(800),
       },
       request: { url: 'https://example.com/page1' },
       enqueueLinks: jest.fn().mockResolvedValue({ processedRequests: [] }),
@@ -129,14 +130,12 @@ describe('createRequestHandler', () => {
     const handler = createRequestHandler('task_test', {});
     await handler(mockCtx);
 
-    expect(Task.updateOne).toHaveBeenCalledWith(
-      { taskId: 'task_test' },
-      { $set: { 'progress.currentUrl': 'https://example.com/page1' } }
-    );
+    // Single atomic update with $inc, $set for currentUrl, and $push for files
     expect(Task.updateOne).toHaveBeenCalledWith(
       { taskId: 'task_test' },
       expect.objectContaining({
         $inc: { 'progress.completed': 1, 'result.stats.success': 1 },
+        $set: { 'progress.currentUrl': 'https://example.com/page1' },
         $push: expect.objectContaining({
           'result.files': expect.objectContaining({
             $each: expect.any(Array),
@@ -169,7 +168,7 @@ describe('createRequestHandler', () => {
     expect(mdWriteCall[1]).not.toContain('Ad Content');
   });
 
-  it('networkidle 超时时应继续处理', async () => {
+  it('domcontentloaded 超时时应继续处理', async () => {
     mockCtx.page.waitForLoadState.mockRejectedValue(new Error('timeout'));
     const handler = createRequestHandler('task_test', {});
     await expect(handler(mockCtx)).resolves.not.toThrow();

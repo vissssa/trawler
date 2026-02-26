@@ -1,6 +1,6 @@
 # Trawler - 网页爬虫 API 服务
 
-面向大模型知识库的网页爬取 API 服务。支持静态/动态网页爬取、递归爬取、HTML → Markdown 自动转换、速率限制。
+面向大模型知识库的网页爬取 API 服务。支持静态/动态网页爬取、递归爬取、HTML → Markdown 自动转换、截图/PDF 导出、内容过滤、代理轮换。
 
 ## 快速开始
 
@@ -35,7 +35,12 @@ LOG_LEVEL=info
 
 ### 启动服务
 
-需要启动三个服务（三个终端窗口）：
+```bash
+# 一键启动所有服务（API + Worker + Scheduler），Ctrl+C 停止
+npm run dev
+```
+
+或分别启动（三个终端窗口）：
 
 ```bash
 # 终端 1：API 服务
@@ -130,20 +135,30 @@ curl -X POST http://localhost:3000/tasks \
         "Accept-Language": "zh-CN"
       },
       "followRedirects": true,
-      "respectRobotsTxt": true
+      "respectRobotsTxt": true,
+      "captureScreenshot": true,
+      "capturePdf": true,
+      "contentSelector": "article",
+      "proxy": {
+        "urls": ["http://proxy1:8080", "http://proxy2:8080"]
+      }
     }
   }'
 ```
 
-| 参数               | 类型    | 默认  | 说明                 |
-| ------------------ | ------- | ----- | -------------------- |
-| `maxDepth`         | number  | 无限  | 递归爬取最大深度     |
-| `maxPages`         | number  | 无限  | 最大爬取页面数       |
-| `timeout`          | number  | 30000 | 页面导航超时（毫秒） |
-| `userAgent`        | string  | 默认  | 自定义 User-Agent    |
-| `headers`          | object  | {}    | 自定义请求头         |
-| `followRedirects`  | boolean | true  | 是否跟随重定向       |
-| `respectRobotsTxt` | boolean | false | 是否遵守 robots.txt  |
+| 参数               | 类型           | 默认  | 说明                                    |
+| ------------------ | -------------- | ----- | --------------------------------------- |
+| `maxDepth`         | number         | 无限  | 递归爬取最大深度                        |
+| `maxPages`         | number         | 无限  | 最大爬取页面数                          |
+| `timeout`          | number         | 30000 | 页面导航超时（毫秒）                    |
+| `userAgent`        | string         | 默认  | 自定义 User-Agent                       |
+| `headers`          | object         | {}    | 自定义请求头                            |
+| `followRedirects`  | boolean        | true  | 是否跟随重定向                          |
+| `respectRobotsTxt` | boolean        | false | 是否遵守 robots.txt                     |
+| `captureScreenshot`| boolean        | false | 为每个页面生成 PNG 截图                 |
+| `capturePdf`       | boolean        | false | 为每个页面生成 A4 PDF                   |
+| `contentSelector`  | string/string[]| -     | CSS 选择器过滤页面内容                  |
+| `proxy.urls`       | string[]       | -     | 任务级代理 URL 列表（轮询使用）         |
 
 ---
 
@@ -322,27 +337,55 @@ curl http://localhost:3000/queue/stats
 # 服务健康检查
 curl http://localhost:3000/health
 
-# 就绪检查（含 MongoDB 连接状态）
+# 就绪检查（含 MongoDB + Redis 连接状态）
 curl http://localhost:3000/ready
+
+# Prometheus 指标
+curl http://localhost:3000/metrics
 ```
 
 ---
 
 ## 爬取结果
 
-每个页面同时生成 HTML 和 Markdown 两份文件，保存在 `data/tasks/{taskId}/` 目录下：
+每个页面最多生成 4 种文件（取决于 options 配置），保存在 `data/tasks/{taskId}/` 目录下：
 
 ```
 data/tasks/
 └── task_1772000189593_47731b84/
     ├── c984d06aafbecf6bc55569f964148ea3.html    # 原始 HTML
     ├── c984d06aafbecf6bc55569f964148ea3.md      # Markdown 转换（turndown）
-    ├── a1b2c3d4e5f6...html
-    ├── a1b2c3d4e5f6...md
+    ├── c984d06aafbecf6bc55569f964148ea3.png     # 页面截图（需启用 captureScreenshot）
+    ├── c984d06aafbecf6bc55569f964148ea3.pdf     # PDF 导出（需启用 capturePdf）
     └── ...
 ```
 
 文件名为 URL 的 MD5 哈希值。Markdown 由 [turndown](https://github.com/mixmark-io/turndown) 自动转换，适合直接导入大模型知识库。
+
+**文件类型说明：**
+
+| 类型 | MIME 类型 | 说明 |
+| --- | --- | --- |
+| `html` | text/html | 原始 HTML |
+| `markdown` | text/markdown | HTML 转换的 Markdown |
+| `screenshot` | image/png | 全页 PNG 截图（高度超过 16384px 时自动降级为视口截图） |
+| `pdf` | application/pdf | A4 尺寸 PDF（含背景色） |
+
+### 文件下载
+
+```bash
+# 下载全部文件（ZIP 打包）
+curl -OJ http://localhost:3000/tasks/{taskId}/files
+
+# 按类型过滤下载
+curl -OJ 'http://localhost:3000/tasks/{taskId}/files?type=html'
+curl -OJ 'http://localhost:3000/tasks/{taskId}/files?type=markdown'
+curl -OJ 'http://localhost:3000/tasks/{taskId}/files?type=screenshot'
+curl -OJ 'http://localhost:3000/tasks/{taskId}/files?type=pdf'
+
+# 单文件下载（过滤后只有 1 个文件时可用）
+curl -OJ 'http://localhost:3000/tasks/{taskId}/files?type=screenshot&format=single'
+```
 
 ---
 
@@ -360,6 +403,9 @@ data/tasks/
 | `LOG_DIR`             | `./logs`                            | 日志文件目录                      |
 | `LOG_LEVEL`           | `info`                              | 日志级别（debug/info/warn/error） |
 | `NODE_ENV`            | `development`                       | 环境（development 有彩色日志）    |
+| `PROXY_URLS`          | -                                   | 全局代理 URL 列表（逗号分隔）    |
+| `CORS_ORIGINS`        | `*`                                 | CORS 允许域（逗号分隔）          |
+| `TRUST_PROXY`         | `false`                             | 是否信任反向代理                  |
 
 ## 技术栈
 
@@ -368,6 +414,7 @@ data/tasks/
 - **任务队列**: BullMQ + Redis
 - **数据库**: MongoDB (Mongoose)
 - **日志**: Pino
+- **监控**: Prometheus (prom-client)
 - **语言**: TypeScript
 
 ## License

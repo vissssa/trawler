@@ -26,6 +26,12 @@ Trawler 是面向大模型知识库的网页爬虫 API 服务，支持静态/动
 │   ├── worker.yaml                # Worker Deployment
 │   ├── scheduler.yaml             # Scheduler Deployment
 │   └── hpa.yaml                   # HPA（API + Worker 自动扩缩）
+├── scripts/
+│   └── dev.sh                     # 一键本地启动脚本（API + Worker + Scheduler）
+├── tests/
+│   └── integration/
+│       ├── api-e2e.ts             # API 集成测试（22 组，72 断言）
+│       └── crawl-e2e.ts           # 端到端爬虫流程测试（10 步，38 断言）
 └── src/
     ├── api/
     │   ├── routes.ts              # API 路由（9个端点，含 /metrics）
@@ -42,7 +48,8 @@ Trawler 是面向大模型知识库的网页爬虫 API 服务，支持静态/动
     │   ├── metrics.ts             # Prometheus 指标（prom-client）
     │   └── queue.ts               # 任务队列（BullMQ）
     ├── utils/
-    │   └── logger.ts              # 日志工具（Pino）
+    │   ├── logger.ts              # 日志工具（Pino，统一 rootLogger）
+    │   └── validation.ts          # 共享校验工具（taskId、路径安全）
     ├── worker/
     │   ├── handlers.ts            # Crawlee 页面处理器 + HTML→Markdown 转换 + 截图/PDF
     │   ├── crawler.ts             # PlaywrightCrawler 工厂（含代理轮换）
@@ -64,6 +71,7 @@ Trawler 是面向大模型知识库的网页爬虫 API 服务，支持静态/动
 
 ```bash
 npm run build           # TypeScript 编译
+npm run dev             # 一键启动 API + Worker + Scheduler（本地开发）
 npm run dev:api         # 开发模式启动 API
 npm run dev:worker      # 开发模式启动 Worker
 npm run dev:scheduler   # 开发模式启动 Scheduler
@@ -82,6 +90,59 @@ npm run format          # Prettier 格式化
 - `RETENTION_DAYS` — 已完成任务保留天数（默认 7）
 - `DATA_DIR` — 爬取文件存储目录（默认 ./data/tasks）
 - `PROXY_URLS` — 全局代理 URL 列表，逗号分隔（可选）
+
+## 截图与 PDF 导出
+
+创建任务时通过 `options` 启用截图和/或 PDF 导出：
+
+```bash
+# 创建包含截图和 PDF 的爬取任务
+curl -X POST http://localhost:3000/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "urls": ["https://example.com"],
+    "options": {
+      "captureScreenshot": true,
+      "capturePdf": true,
+      "maxDepth": 2,
+      "maxPages": 10
+    }
+  }'
+```
+
+**支持的选项：**
+
+| 选项 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `captureScreenshot` | boolean | false | 每个页面生成全页 PNG 截图（高度超过 16384px 时自动降级为视口截图） |
+| `capturePdf` | boolean | false | 每个页面生成 A4 尺寸 PDF（含背景色） |
+
+**文件下载与过滤：**
+
+```bash
+# 下载全部文件（ZIP）
+curl -O http://localhost:3000/tasks/{taskId}/files
+
+# 按类型过滤下载
+curl -O http://localhost:3000/tasks/{taskId}/files?type=screenshot   # 仅截图
+curl -O http://localhost:3000/tasks/{taskId}/files?type=pdf          # 仅 PDF
+curl -O http://localhost:3000/tasks/{taskId}/files?type=html         # 仅 HTML
+curl -O http://localhost:3000/tasks/{taskId}/files?type=markdown     # 仅 Markdown
+
+# 单文件下载（仅当过滤后只有 1 个文件时可用）
+curl -O http://localhost:3000/tasks/{taskId}/files?type=screenshot&format=single
+```
+
+**任务结果中的文件类型：**
+
+每个爬取的页面最多生成 4 种文件，可通过 `GET /tasks/{taskId}` 的 `result.files` 查看：
+
+| 文件类型 | MIME 类型 | 说明 |
+|----------|-----------|------|
+| `html` | text/html | 原始 HTML |
+| `markdown` | text/markdown | 由 HTML 转换的 Markdown |
+| `screenshot` | image/png | 页面全屏截图 |
+| `pdf` | application/pdf | A4 PDF 导出 |
 
 ## 实现进度
 

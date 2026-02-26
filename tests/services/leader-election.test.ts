@@ -4,7 +4,14 @@ import Redis from 'ioredis';
 
 // Mock dependencies
 jest.mock('redlock');
-jest.mock('ioredis');
+jest.mock('ioredis', () => {
+  const mockRedisInstance = {
+    on: jest.fn().mockReturnThis(),
+    get: jest.fn(),
+    quit: jest.fn().mockResolvedValue('OK'),
+  };
+  return jest.fn(() => mockRedisInstance);
+});
 jest.mock('../../src/config', () => ({
   config: {
     redis: {
@@ -52,15 +59,11 @@ describe('LeaderElectionService', () => {
       on: jest.fn(),
     } as any;
 
-    // Setup mock redis
-    mockRedis = {
-      get: jest.fn(),
-      quit: jest.fn().mockResolvedValue('OK'),
-    } as any;
+    // Setup mock redis — get the instance created by the constructor mock
+    mockRedis = new (Redis as any)();
 
     // Mock constructors
     (Redlock as jest.MockedClass<typeof Redlock>).mockImplementation(() => mockRedlock);
-    (Redis as unknown as jest.MockedClass<typeof Redis>).mockImplementation(() => mockRedis);
 
     leaderElectionService = new LeaderElectionService();
   });
@@ -120,21 +123,19 @@ describe('LeaderElectionService', () => {
   });
 
   describe('getCurrentLeader', () => {
-    it('should return current leader pod name', async () => {
-      mockRedis.get.mockResolvedValue('leader-pod');
+    it('should return pod name when is leader', async () => {
+      mockRedlock.acquire.mockResolvedValue(mockLock);
+      await leaderElectionService.acquireLeadership();
 
-      const leader = await leaderElectionService.getCurrentLeader();
+      const leader = leaderElectionService.getCurrentLeader();
 
-      expect(leader).toBe('leader-pod');
-      expect(mockRedis.get).toHaveBeenCalledWith('test:leader');
+      expect(leader).toBe('test-pod');
     });
 
-    it('should return null when redis get fails', async () => {
-      mockRedis.get.mockRejectedValue(new Error('Redis error'));
+    it('should return unknown when not leader', () => {
+      const leader = leaderElectionService.getCurrentLeader();
 
-      const leader = await leaderElectionService.getCurrentLeader();
-
-      expect(leader).toBeNull();
+      expect(leader).toBe('unknown');
     });
   });
 

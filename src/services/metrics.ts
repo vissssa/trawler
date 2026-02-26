@@ -31,8 +31,8 @@ export const tasksCurrent = new client.Gauge({
       statuses.forEach((s, i) => {
         this.set({ status: s }, counts[i]);
       });
-    } catch {
-      // ignore errors during metric collection
+    } catch (err) {
+      console.error('Failed to collect task metrics:', err);
     }
   },
 });
@@ -51,8 +51,8 @@ export const queueDepth = new client.Gauge({
       this.set({ state: 'completed' }, stats.completed);
       this.set({ state: 'failed' }, stats.failed);
       this.set({ state: 'delayed' }, stats.delayed);
-    } catch {
-      // ignore errors during metric collection
+    } catch (err) {
+      console.error('Failed to collect queue metrics:', err);
     }
   },
 });

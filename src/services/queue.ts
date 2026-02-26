@@ -18,11 +18,22 @@ export class QueueService {
   private queue: Queue<CrawlJobData>;
   private queueEvents: QueueEvents;
   private connection: Redis;
+  private queueEventsConnection: Redis;
 
   constructor() {
     // 创建 Redis 连接
     this.connection = new Redis(config.redis.url, {
       maxRetriesPerRequest: null,
+    });
+
+    this.connection.on('error', (err) => {
+      logger.error({ error: err.message }, 'Redis connection error (queue)');
+    });
+
+    // 创建独立的 Redis 连接用于 QueueEvents
+    this.queueEventsConnection = this.connection.duplicate();
+    this.queueEventsConnection.on('error', (err) => {
+      logger.error({ error: err.message }, 'Redis connection error (queueEvents)');
     });
 
     // 创建队列
@@ -46,7 +57,7 @@ export class QueueService {
 
     // 创建队列事件监听器
     this.queueEvents = new QueueEvents('crawl-tasks', {
-      connection: this.connection.duplicate(),
+      connection: this.queueEventsConnection,
     });
 
     this.setupEventHandlers();
@@ -94,12 +105,18 @@ export class QueueService {
     return this.queue.getJob(taskId);
   }
 
-  // 移除任务
+  // 移除任务（active 的用 moveToFailed 替代 remove）
   async removeJob(taskId: string): Promise<void> {
     const job = await this.getJob(taskId);
     if (job) {
-      await job.remove();
-      logger.info(`Removed job ${taskId} from queue`);
+      const state = await job.getState();
+      if (state === 'active') {
+        await job.moveToFailed(new Error('Removed by user'), '0', true);
+        logger.info(`Moved active job ${taskId} to failed`);
+      } else {
+        await job.remove();
+        logger.info(`Removed job ${taskId} from queue`);
+      }
     }
   }
 
@@ -148,6 +165,16 @@ export class QueueService {
     return jobs;
   }
 
+  // Redis 健康检查
+  async ping(): Promise<boolean> {
+    try {
+      const result = await this.connection.ping();
+      return result === 'PONG';
+    } catch {
+      return false;
+    }
+  }
+
   // 获取队列实例
   getQueue(): Queue<CrawlJobData> {
     return this.queue;
@@ -163,6 +190,7 @@ export class QueueService {
     await this.queue.close();
     await this.queueEvents.close();
     await this.connection.quit();
+    await this.queueEventsConnection.quit();
     queueServiceInstance = null;
     logger.info('Queue service closed');
   }

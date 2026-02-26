@@ -17,60 +17,64 @@ try {
 // api → api.log, worker → worker.log, scheduler → scheduler.log
 const logFile = path.join(LOG_DIR, process.env.LOG_FILE || 'app.log');
 
+let logLevel = process.env.LOG_LEVEL || 'info';
+
+if (!VALID_LOG_LEVELS.includes(logLevel)) {
+  console.warn(
+    `Invalid LOG_LEVEL "${logLevel}", falling back to "info". ` +
+    `Valid levels: ${VALID_LOG_LEVELS.join(', ')}`
+  );
+  logLevel = 'info';
+}
+
+// 单一 root logger 实例（仅启动 2 个 worker thread 用于 transport）
+const rootLogger = pino({
+  level: logLevel,
+  transport: {
+    targets: [
+      // 控制台输出
+      process.env.NODE_ENV === 'development'
+        ? {
+            target: 'pino-pretty',
+            options: {
+              colorize: true,
+              translateTime: 'SYS:standard',
+              ignore: 'pid,hostname',
+            },
+            level: logLevel,
+          }
+        : {
+            target: 'pino/file',
+            options: { destination: 1 }, // stdout
+            level: logLevel,
+          },
+      // 文件输出（同一进程所有模块写入同一文件）
+      process.env.NODE_ENV === 'development'
+        ? {
+            target: 'pino-pretty',
+            options: {
+              colorize: false,
+              translateTime: 'SYS:standard',
+              ignore: 'pid,hostname',
+              singleLine: true,
+              destination: logFile,
+              mkdir: true,
+            },
+            level: logLevel,
+          }
+        : {
+            target: 'pino/file',
+            options: { destination: logFile, mkdir: true },
+            level: logLevel,
+          },
+    ],
+  },
+});
+
+export { rootLogger };
+
 export function createLogger(name: string) {
-  let logLevel = process.env.LOG_LEVEL || 'info';
-
-  if (!VALID_LOG_LEVELS.includes(logLevel)) {
-    console.warn(
-      `Invalid LOG_LEVEL "${logLevel}", falling back to "info". ` +
-      `Valid levels: ${VALID_LOG_LEVELS.join(', ')}`
-    );
-    logLevel = 'info';
-  }
-
-  return pino({
-    name,
-    level: logLevel,
-    transport: {
-      targets: [
-        // 控制台输出
-        process.env.NODE_ENV === 'development'
-          ? {
-              target: 'pino-pretty',
-              options: {
-                colorize: true,
-                translateTime: 'SYS:standard',
-                ignore: 'pid,hostname',
-              },
-              level: logLevel,
-            }
-          : {
-              target: 'pino/file',
-              options: { destination: 1 }, // stdout
-              level: logLevel,
-            },
-        // 文件输出（同一进程所有模块写入同一文件）
-        process.env.NODE_ENV === 'development'
-          ? {
-              target: 'pino-pretty',
-              options: {
-                colorize: false,
-                translateTime: 'SYS:standard',
-                ignore: 'pid,hostname',
-                singleLine: true,
-                destination: logFile,
-                mkdir: true,
-              },
-              level: logLevel,
-            }
-          : {
-              target: 'pino/file',
-              options: { destination: logFile, mkdir: true },
-              level: logLevel,
-            },
-      ],
-    },
-  });
+  return rootLogger.child({ name });
 }
 
 export const logger = createLogger('trawler');

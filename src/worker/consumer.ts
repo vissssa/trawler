@@ -3,8 +3,9 @@ process.env.LOG_FILE = process.env.LOG_FILE || 'worker.log';
 import { Worker, Job } from 'bullmq';
 import Redis from 'ioredis';
 import { rm } from 'fs/promises';
+import path from 'path';
 import { config } from '../config';
-import { connectDatabase } from '../services/database';
+import { connectDatabase, disconnectDatabase } from '../services/database';
 import { Task, TaskStatus } from '../models/Task';
 import type { CrawlJobData } from '../services/queue';
 import { createCrawler } from './crawler';
@@ -18,15 +19,18 @@ async function processJob(job: Job<CrawlJobData>): Promise<void> {
   const { taskId, urls, options } = job.data;
   logger.info({ taskId, urls: urls.length, attempt: job.attemptsMade + 1 }, 'Processing crawl job');
 
-  // On retry, reset progress/result to avoid duplicate accumulation
+  // On retry, clean up disk files and reset progress/result to avoid duplicate accumulation
   if (job.attemptsMade > 0) {
+    const taskDir = path.join(config.storage.dataDir, taskId);
+    await rm(taskDir, { recursive: true, force: true }).catch(() => {});
+
     await Task.updateOne(
       { taskId },
       {
         $set: {
           status: TaskStatus.RUNNING,
           progress: { completed: 0, total: urls.length, failed: 0, currentUrl: '' },
-          result: { files: [], errors: [], stats: { success: 0, failed: 0 } },
+          result: { files: [], errors: [], stats: { success: 0, failed: 0, skipped: 0 } },
         },
       }
     );
@@ -111,7 +115,7 @@ async function main(): Promise<void> {
     connection,
     concurrency: 1, // One crawl task at a time; Crawlee handles page-level concurrency
     lockDuration: 300000, // 5 minutes - crawl tasks can take a while
-    stalledInterval: 300000,
+    stalledInterval: 600000, // 2x lockDuration to avoid false stalled detection
   });
 
   // Event handlers
@@ -125,7 +129,7 @@ async function main(): Promise<void> {
 
   worker.on('failed', (job, error) => {
     logger.error(
-      { jobId: job?.id, taskId: job?.data.taskId, error: error.message },
+      { jobId: job?.id, taskId: job?.data?.taskId, error: error.message },
       'Job failed'
     );
   });
@@ -141,6 +145,7 @@ async function main(): Promise<void> {
     logger.info('Shutting down worker...');
     await worker.close();
     await connection.quit();
+    await disconnectDatabase();
     process.exit(0);
   };
 

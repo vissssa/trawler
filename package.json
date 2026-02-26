@@ -10,6 +10,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "dev": "bash scripts/dev.sh",
     "dev:api": "nodemon --exec ts-node src/api/server.ts",
     "dev:worker": "nodemon --exec ts-node src/worker/consumer.ts",
     "dev:scheduler": "nodemon --exec ts-node src/scheduler/index.ts",
