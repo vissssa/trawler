@@ -77,9 +77,9 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
                 extractResources: { type: 'boolean' },
                 respectRobotsTxt: { type: 'boolean' },
                 contentSelector: {
-                  oneOf: [
+                  anyOf: [
                     { type: 'string' },
-                    { type: 'array', items: { type: 'string' } },
+                    { type: 'array', items: { type: 'string' }, minItems: 1 },
                   ],
                 },
                 proxy: {
