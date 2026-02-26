@@ -1,0 +1,24 @@
+# ==========================================================
+# Base image for arm64 — node:22-slim + Playwright Chromium
+# ==========================================================
+FROM --platform=linux/arm64 node:22-slim
+
+WORKDIR /app
+
+# Install production dependencies (Playwright browser download not skipped)
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+# Install Chromium and its system dependencies via Playwright CLI
+RUN npx playwright install chromium --with-deps
+
+# Create bml user/group (601:601) and data/log directories
+RUN groupadd -g 601 bml && \
+    useradd -u 601 -g bml -m bml && \
+    mkdir -p /app/data/tasks /app/logs && \
+    chown -R bml:bml /app
+
+ENV NODE_ENV=production \
+    API_PORT=3000 \
+    DATA_DIR=/app/data/tasks \
+    LOG_DIR=/app/logs

@@ -1,0 +1,22 @@
+# ==========================================================
+# Package image for arm64 — COPY pre-built output into base
+# ==========================================================
+ARG BASE_IMAGE
+FROM --platform=linux/arm64 ${BASE_IMAGE}
+
+WORKDIR /app
+
+# Copy compiled JS from external build output
+COPY output/ ./dist
+
+# Copy package.json (needed by Node.js for module resolution)
+COPY package.json ./
+
+USER bml
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://localhost:3000/health').then(r=>{if(!r.ok)throw 1})" || exit 1
+
+CMD ["node", "dist/api/server.js"]
