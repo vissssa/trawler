@@ -28,7 +28,14 @@ jest.mock('../../src/config', () => ({
     },
   },
 }));
-jest.mock('fs');
+jest.mock('fs', () => {
+  const actual = jest.requireActual('fs');
+  return {
+    ...actual,
+    existsSync: jest.fn(),
+    createReadStream: jest.fn(),
+  };
+});
 jest.mock('fs/promises');
 jest.mock('archiver');
 jest.mock('../../src/utils/logger', () => {

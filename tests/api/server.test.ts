@@ -204,4 +204,33 @@ describe('Fastify Server', () => {
       expect(server.log).toBeDefined();
     });
   });
+
+  describe('Swagger', () => {
+    it('should serve Swagger UI at /docs', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/docs/',
+      });
+
+      // Swagger UI returns 200 with HTML content
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('text/html');
+    });
+
+    it('should serve OpenAPI JSON at /docs/json', async () => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/docs/json',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const spec = JSON.parse(response.body);
+      expect(spec.openapi).toMatch(/^3\./);
+      expect(spec.info.title).toBe('Trawler API');
+      expect(spec.info.version).toBe('1.0.0');
+      expect(spec.paths).toBeDefined();
+      expect(spec.paths['/tasks']).toBeDefined();
+      expect(spec.paths['/health']).toBeDefined();
+    });
+  });
 });

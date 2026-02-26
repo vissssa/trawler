@@ -53,30 +53,44 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
     '/tasks',
     {
       schema: {
+        tags: ['Tasks'],
+        summary: '创建爬取任务',
+        description: '提交一组 URL 创建爬取任务，支持递归爬取、内容过滤、截图/PDF 导出等选项。',
         body: {
           type: 'object',
           required: ['urls'],
+          example: {
+            urls: ['https://karpathy.bearblog.dev/year-in-review-2025/'],
+            options: {
+              maxPages: 1,
+              captureScreenshot: true,
+              contentSelector: ['main'],
+            },
+          },
           properties: {
             urls: {
               type: 'array',
+              description: '待爬取的 URL 列表（自动去重）',
               items: { type: 'string', format: 'uri' },
               minItems: 1,
             },
             options: {
               type: 'object',
+              description: '爬取选项',
               additionalProperties: false,
               properties: {
-                maxDepth: { type: 'number', minimum: 1 },
-                maxPages: { type: 'number', minimum: 1 },
-                timeout: { type: 'number', minimum: 1000 },
-                userAgent: { type: 'string' },
-                headers: { type: 'object', additionalProperties: { type: 'string' } },
-                followRedirects: { type: 'boolean' },
-                captureScreenshot: { type: 'boolean' },
-                capturePdf: { type: 'boolean' },
-                extractResources: { type: 'boolean' },
-                respectRobotsTxt: { type: 'boolean' },
+                maxDepth: { type: 'number', minimum: 1, description: '递归爬取最大深度' },
+                maxPages: { type: 'number', minimum: 1, description: '最大爬取页面数' },
+                timeout: { type: 'number', minimum: 1000, description: '单页超时毫秒数（默认 30000）' },
+                userAgent: { type: 'string', description: '自定义 User-Agent' },
+                headers: { type: 'object', additionalProperties: { type: 'string' }, description: '自定义请求头' },
+                followRedirects: { type: 'boolean', description: '是否跟随重定向（默认 true）' },
+                captureScreenshot: { type: 'boolean', description: '是否生成页面 PNG 截图' },
+                capturePdf: { type: 'boolean', description: '是否生成页面 A4 PDF' },
+                extractResources: { type: 'boolean', description: '是否提取页面资源' },
+                respectRobotsTxt: { type: 'boolean', description: '是否遵守 robots.txt' },
                 contentSelector: {
+                  description: 'CSS 选择器，仅提取匹配元素的内容（字符串或数组）',
                   anyOf: [
                     { type: 'string' },
                     { type: 'array', items: { type: 'string' }, minItems: 1 },
@@ -84,9 +98,11 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
                 },
                 proxy: {
                   type: 'object',
+                  description: '代理配置（任务级别，优先于全局 PROXY_URLS）',
                   properties: {
                     urls: {
                       type: 'array',
+                      description: '代理 URL 列表，轮询使用',
                       items: { type: 'string', format: 'uri' },
                       minItems: 1,
                     },
@@ -155,6 +171,8 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
     '/tasks/:taskId',
     {
       schema: {
+        tags: ['Tasks'],
+        summary: '获取任务详情',
         params: {
           type: 'object',
           properties: {
@@ -237,6 +255,8 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
     '/tasks',
     {
       schema: {
+        tags: ['Tasks'],
+        summary: '任务列表',
         querystring: {
           type: 'object',
           properties: {
@@ -310,6 +330,8 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
     '/tasks/:taskId',
     {
       schema: {
+        tags: ['Tasks'],
+        summary: '更新/取消任务',
         params: {
           type: 'object',
           properties: {
@@ -396,6 +418,8 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
     '/tasks/:taskId',
     {
       schema: {
+        tags: ['Tasks'],
+        summary: '删除任务',
         params: {
           type: 'object',
           properties: {
@@ -456,6 +480,8 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
     '/tasks/:taskId/progress',
     {
       schema: {
+        tags: ['Tasks'],
+        summary: '获取任务进度',
         params: {
           type: 'object',
           properties: {
@@ -508,7 +534,12 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
   );
 
   // GET /queue/stats - 获取队列统计信息
-  server.get('/queue/stats', async (request: FastifyRequest, reply: FastifyReply) => {
+  server.get('/queue/stats', {
+    schema: {
+      tags: ['System'],
+      summary: '队列统计',
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const stats = await queueService.getStats();
       reply.send(stats);
@@ -526,6 +557,8 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
     '/tasks/:taskId/files',
     {
       schema: {
+        tags: ['Tasks'],
+        summary: '下载任务文件',
         params: {
           type: 'object',
           properties: { taskId: { type: 'string' } },
@@ -536,6 +569,13 @@ export async function registerTaskRoutes(server: FastifyInstance): Promise<void>
           properties: {
             type: { type: 'string', enum: ['html', 'markdown', 'screenshot', 'pdf', 'all'], default: 'all' },
             format: { type: 'string', enum: ['zip', 'single'], default: 'zip' },
+          },
+        },
+        response: {
+          200: {
+            description: 'ZIP 压缩包或单文件',
+            type: 'string',
+            format: 'binary',
           },
         },
       },

@@ -2,6 +2,8 @@ process.env.LOG_FILE = process.env.LOG_FILE || 'api.log';
 
 import Fastify, { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
+import swagger from '@fastify/swagger';
+import swaggerUi from '@fastify/swagger-ui';
 import mongoose from 'mongoose';
 import { config } from '../config';
 import { createLogger, rootLogger } from '../utils/logger';
@@ -24,6 +26,7 @@ export async function createServer(): Promise<FastifyInstance> {
     ajv: {
       customOptions: {
         removeAdditional: false,
+        keywords: ['example'],
       },
     },
   });
@@ -35,8 +38,42 @@ export async function createServer(): Promise<FastifyInstance> {
     credentials: true,
   });
 
+  // 注册 Swagger 插件
+  await server.register(swagger, {
+    openapi: {
+      info: {
+        title: 'Trawler API',
+        description: '面向大模型知识库的网页爬虫 API 服务',
+        version: '1.0.0',
+      },
+      tags: [
+        { name: 'Tasks', description: '任务管理' },
+        { name: 'System', description: '系统健康检查与监控' },
+      ],
+    },
+  });
+
+  await server.register(swaggerUi, {
+    routePrefix: '/docs',
+  });
+
   // 健康检查端点
-  server.get('/health', async (_request: FastifyRequest, _reply: FastifyReply) => {
+  server.get('/health', {
+    schema: {
+      tags: ['System'],
+      summary: '健康检查',
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            timestamp: { type: 'string' },
+            uptime: { type: 'number' },
+          },
+        },
+      },
+    },
+  }, async (_request: FastifyRequest, _reply: FastifyReply) => {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -45,7 +82,42 @@ export async function createServer(): Promise<FastifyInstance> {
   });
 
   // 就绪检查端点（含 Redis 健康检查）
-  server.get('/ready', async (_request: FastifyRequest, reply: FastifyReply) => {
+  server.get('/ready', {
+    schema: {
+      tags: ['System'],
+      summary: '就绪检查',
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            timestamp: { type: 'string' },
+            checks: {
+              type: 'object',
+              properties: {
+                database: { type: 'boolean' },
+                redis: { type: 'boolean' },
+              },
+            },
+          },
+        },
+        503: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            timestamp: { type: 'string' },
+            checks: {
+              type: 'object',
+              properties: {
+                database: { type: 'boolean' },
+                redis: { type: 'boolean' },
+              },
+            },
+          },
+        },
+      },
+    },
+  }, async (_request: FastifyRequest, reply: FastifyReply) => {
     const dbReady = mongoose.connection.readyState === 1;
     let redisReady = false;
     try {
@@ -73,7 +145,19 @@ export async function createServer(): Promise<FastifyInstance> {
   await registerTaskRoutes(server);
 
   // Prometheus 指标端点
-  server.get('/metrics', async (_request: FastifyRequest, reply: FastifyReply) => {
+  server.get('/metrics', {
+    schema: {
+      tags: ['System'],
+      summary: 'Prometheus 指标',
+      produces: ['text/plain'],
+      response: {
+        200: {
+          type: 'string',
+          description: 'Prometheus 格式的指标数据',
+        },
+      },
+    },
+  }, async (_request: FastifyRequest, reply: FastifyReply) => {
     reply.header('Content-Type', metricsRegistry.contentType);
     return metricsRegistry.metrics();
   });
