@@ -3,6 +3,8 @@ import path from 'path';
 import { Task, TaskStatus } from '../models/Task';
 import { config } from '../config';
 import { createLogger } from '../utils/logger';
+import { QueueService } from '../services/queue';
+import { stalePendingReconciled, runningOrphanedByRedis } from '../services/metrics';
 
 const logger = createLogger('scheduler:cleanup');
 
@@ -115,15 +117,158 @@ export async function cleanupExpiredTasks(): Promise<number> {
 }
 
 /**
- * Run all cleanup strategies.
+ * Cleanup stale PENDING tasks that have no corresponding BullMQ job in Redis.
+ * Depending on stalePendingAction config, either re-enqueue or mark as FAILED.
  */
-export async function runAllCleanups(): Promise<void> {
+export async function cleanupStalePendingTasks(
+  queueService: QueueService
+): Promise<{ reenqueued: number; failed: number }> {
+  const cutoff = new Date(Date.now() - config.task.pendingStaleMs);
+  const result = { reenqueued: 0, failed: 0 };
+
+  const staleTasks = await Task.find(
+    {
+      status: TaskStatus.PENDING,
+      createdAt: { $lt: cutoff },
+    },
+    'taskId urls options'
+  ).limit(BATCH_SIZE);
+
+  if (staleTasks.length === 0) {
+    return result;
+  }
+
+  for (const task of staleTasks) {
+    const job = await queueService.getJob(task.taskId);
+    if (job) {
+      continue; // Job exists in Redis, skip
+    }
+
+    if (config.task.stalePendingAction === 'reenqueue') {
+      try {
+        await queueService.addJob(task.taskId, task.urls, task.options);
+        result.reenqueued++;
+        stalePendingReconciled.inc({ action: 'reenqueued' });
+        logger.info({ taskId: task.taskId }, 'Re-enqueued stale pending task');
+      } catch (error) {
+        // Fallback to marking as FAILED if re-enqueue fails
+        const updated = await Task.updateOne(
+          { taskId: task.taskId, status: TaskStatus.PENDING },
+          {
+            $set: {
+              status: TaskStatus.FAILED,
+              completedAt: new Date(),
+              errorMessage: `Stale pending task: re-enqueue failed (${(error as Error).message})`,
+            },
+          }
+        );
+        if (updated.modifiedCount > 0) {
+          result.failed++;
+          stalePendingReconciled.inc({ action: 'failed' });
+          logger.warn({ taskId: task.taskId, error: (error as Error).message }, 'Re-enqueue failed, marked as FAILED');
+        }
+      }
+    } else {
+      const updated = await Task.updateOne(
+        { taskId: task.taskId, status: TaskStatus.PENDING },
+        {
+          $set: {
+            status: TaskStatus.FAILED,
+            completedAt: new Date(),
+            errorMessage: 'Stale pending task: no BullMQ job found in Redis',
+          },
+        }
+      );
+      if (updated.modifiedCount > 0) {
+        result.failed++;
+        stalePendingReconciled.inc({ action: 'failed' });
+        logger.info({ taskId: task.taskId }, 'Marked stale pending task as FAILED');
+      }
+    }
+  }
+
+  if (result.reenqueued > 0 || result.failed > 0) {
+    logger.info(result, 'Stale pending tasks cleanup complete');
+  }
+
+  return result;
+}
+
+/**
+ * Cleanup RUNNING tasks that have no corresponding BullMQ job in Redis.
+ * These are likely orphaned after a Redis restart/data loss.
+ */
+export async function cleanupRunningTasksWithoutJob(
+  queueService: QueueService
+): Promise<number> {
+  const cutoff = new Date(Date.now() - config.task.runningOrphanCheckMs);
+
+  const runningTasks = await Task.find(
+    {
+      status: TaskStatus.RUNNING,
+      startedAt: { $lt: cutoff },
+    },
+    'taskId'
+  ).limit(BATCH_SIZE);
+
+  if (runningTasks.length === 0) {
+    return 0;
+  }
+
+  const orphanedTaskIds: string[] = [];
+
+  for (const task of runningTasks) {
+    const job = await queueService.getJob(task.taskId);
+    if (!job) {
+      orphanedTaskIds.push(task.taskId);
+    }
+  }
+
+  if (orphanedTaskIds.length === 0) {
+    return 0;
+  }
+
+  const result = await Task.updateMany(
+    {
+      taskId: { $in: orphanedTaskIds },
+      status: TaskStatus.RUNNING,
+    },
+    {
+      $set: {
+        status: TaskStatus.FAILED,
+        completedAt: new Date(),
+        errorMessage: 'Running task orphaned: no BullMQ job found in Redis',
+      },
+    }
+  );
+
+  if (result.modifiedCount > 0) {
+    runningOrphanedByRedis.inc(result.modifiedCount);
+    logger.info({ count: result.modifiedCount }, 'Cleaned up running tasks without BullMQ job');
+  }
+
+  return result.modifiedCount;
+}
+
+/**
+ * Run all cleanup strategies.
+ * When queueService is provided, Redis-aware strategies run first.
+ */
+export async function runAllCleanups(queueService?: QueueService | null): Promise<void> {
   logger.info('Running all cleanup strategies...');
 
-  // Run sequentially to avoid timeout/orphan query overlap on the same RUNNING tasks
+  // Redis-aware strategies (run first if queueService is available)
+  let stalePending = { reenqueued: 0, failed: 0 };
+  let runningOrphaned = 0;
+  if (queueService) {
+    stalePending = await cleanupStalePendingTasks(queueService);
+    runningOrphaned = await cleanupRunningTasksWithoutJob(queueService);
+  }
+
+  // Time-based strategies (always run)
   const timedOut = await cleanupTimedOutTasks();
   const orphaned = await cleanupOrphanedTasks();
   const expired = await cleanupExpiredTasks();
 
-  logger.info({ timedOut, orphaned, expired }, 'Cleanup complete');
+  logger.info({ stalePending, runningOrphaned, timedOut, orphaned, expired }, 'Cleanup complete');
 }

@@ -19,6 +19,7 @@ import { runOneCycle } from '../../src/scheduler/index';
 
 describe('scheduler runOneCycle', () => {
   let mockLeaderService: any;
+  let mockQueueService: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -27,34 +28,45 @@ describe('scheduler runOneCycle', () => {
       isCurrentLeader: jest.fn().mockReturnValue(true),
       close: jest.fn().mockResolvedValue(undefined),
     };
+    mockQueueService = {
+      getJob: jest.fn(),
+      addJob: jest.fn(),
+      ping: jest.fn().mockResolvedValue(true),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
     (runAllCleanups as jest.Mock).mockResolvedValue(undefined);
   });
 
-  it('leader 时应运行清理', async () => {
+  it('leader 时应运行清理并传递 queueService', async () => {
     mockLeaderService.isCurrentLeader.mockReturnValue(true);
-    await runOneCycle(mockLeaderService);
-    expect(runAllCleanups).toHaveBeenCalled();
+    await runOneCycle(mockLeaderService, mockQueueService);
+    expect(runAllCleanups).toHaveBeenCalledWith(mockQueueService);
     expect(mockLeaderService.acquireLeadership).not.toHaveBeenCalled();
   });
 
   it('非 leader 时应尝试获取领导权', async () => {
     mockLeaderService.isCurrentLeader.mockReturnValue(false);
-    await runOneCycle(mockLeaderService);
+    await runOneCycle(mockLeaderService, mockQueueService);
     expect(mockLeaderService.acquireLeadership).toHaveBeenCalled();
     expect(runAllCleanups).not.toHaveBeenCalled();
   });
 
-  it('获取领导权后应运行清理', async () => {
+  it('获取领导权后应运行清理并传递 queueService', async () => {
     mockLeaderService.isCurrentLeader
       .mockReturnValueOnce(false)   // first check: not leader
       .mockReturnValueOnce(true);   // after acquire: is leader
-    await runOneCycle(mockLeaderService);
+    await runOneCycle(mockLeaderService, mockQueueService);
     expect(mockLeaderService.acquireLeadership).toHaveBeenCalled();
-    expect(runAllCleanups).toHaveBeenCalled();
+    expect(runAllCleanups).toHaveBeenCalledWith(mockQueueService);
   });
 
   it('leaderService 为 null 时应直接运行清理', async () => {
-    await runOneCycle(null);
-    expect(runAllCleanups).toHaveBeenCalled();
+    await runOneCycle(null, mockQueueService);
+    expect(runAllCleanups).toHaveBeenCalledWith(mockQueueService);
+  });
+
+  it('queueService 为 null 时应传递 null 给 runAllCleanups', async () => {
+    await runOneCycle(null, null);
+    expect(runAllCleanups).toHaveBeenCalledWith(null);
   });
 });

@@ -55,8 +55,8 @@ Trawler 是面向大模型知识库的网页爬虫 API 服务，支持静态/动
     │   ├── crawler.ts             # PlaywrightCrawler 工厂（含代理轮换）
     │   └── consumer.ts            # BullMQ Worker 入口
     └── scheduler/
-        ├── cleanup.ts             # 三种清理策略
-        └── index.ts               # Scheduler 入口（Leader 选举 + 定时循环）
+        ├── cleanup.ts             # 五种清理策略（含 Redis 感知的 pending/running 一致性修复）
+        └── index.ts               # Scheduler 入口（Leader 选举 + QueueService + 定时循环）
 ```
 
 ## 架构说明
@@ -65,7 +65,7 @@ Trawler 是面向大模型知识库的网页爬虫 API 服务，支持静态/动
 
 - **API** (`npm run dev:api`) — Fastify HTTP 服务，接收任务创建请求，写入 MongoDB + BullMQ 队列
 - **Worker** (`npm run dev:worker`) — BullMQ Consumer，从队列取任务，用 Crawlee+Playwright 爬取网页，HTML 保存到磁盘，进度写入 MongoDB
-- **Scheduler** (`npm run dev:scheduler`) — 定时清理进程，通过 Leader 选举保证单实例运行，每5分钟清理超时/孤儿/过期任务
+- **Scheduler** (`npm run dev:scheduler`) — 定时清理进程，通过 Leader 选举保证单实例运行，每5分钟执行五种清理策略（Redis 感知的 stale-pending/running-orphan 修复 + 超时/孤儿/过期清理），启动时自动执行一次一致性检查
 
 ## 常用命令
 
@@ -90,6 +90,9 @@ npm run format          # Prettier 格式化
 - `RETENTION_DAYS` — 已完成任务保留天数（默认 7）
 - `DATA_DIR` — 爬取文件存储目录（默认 ./data/tasks）
 - `PROXY_URLS` — 全局代理 URL 列表，逗号分隔（可选）
+- `PENDING_STALE_MS` — pending 任务超过此时间且 Redis 无对应 job 视为孤儿（默认 1800000 = 30分钟）
+- `RUNNING_ORPHAN_CHECK_MS` — running 任务超过此时间且 Redis 无对应 job 立即标记失败（默认 600000 = 10分钟）
+- `STALE_PENDING_ACTION` — 孤儿 pending 任务处理方式：`reenqueue`（重新入队，默认）或 `fail`（标记失败）
 
 ## 截图与 PDF 导出
 
@@ -179,7 +182,7 @@ curl -O http://localhost:3000/tasks/{taskId}/files?type=screenshot&format=single
 7. ~~Markdown 链接绝对化（cheerio 遍历 `[href]`/`[src]`，`new URL` 转绝对）~~ ✅
 
 ### ✅ 阶段4：监控与可观测性
-5. ~~Prometheus 指标端点（`GET /metrics`）~~ ✅（prom-client，6个自定义指标 + 默认进程指标）
+5. ~~Prometheus 指标端点（`GET /metrics`）~~ ✅（prom-client，8个自定义指标 + 默认进程指标）
 6. ~~结构化错误处理（自定义错误类型）~~ ✅（AppError 基类 + NotFoundError/BadRequestError/ConflictError/InternalError）
 
 ### ✅ 阶段5：部署与运维（部分完成）
@@ -191,6 +194,11 @@ curl -O http://localhost:3000/tasks/{taskId}/files?type=screenshot&format=single
 10. ~~代理轮换~~ ✅（task 级别 + 全局 PROXY_URLS，Crawlee ProxyConfiguration round-robin）
 11. ~~内容过滤（CSS 选择器）~~ ✅（通过 `contentSelector` 实现）
 12. ~~截图 / PDF 导出~~ ✅（`captureScreenshot` PNG + `capturePdf` A4 PDF）
+
+### ✅ 阶段7：Redis 数据一致性修复
+13. ~~Scheduler Redis 感知清理~~ ✅（stale pending 任务检测 + 重新入队/标记失败，running 任务 Redis 孤儿检测）
+14. ~~启动时一致性检查~~ ✅（Scheduler 启动后立即执行一次全量清理，快速修复 Redis 重装/清空后的数据不一致）
+15. ~~Prometheus 监控指标~~ ✅（`stale_pending_reconciled_total` + `running_orphaned_by_redis_total`）
 
 ## 技术债务
 

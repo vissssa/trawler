@@ -73,3 +73,18 @@ export const pagesCrawledTotal = new client.Counter({
   labelNames: ['result'] as const,
   registers: [metricsRegistry],
 });
+
+// Stale pending 任务修复计数
+export const stalePendingReconciled = new client.Counter({
+  name: 'trawler_stale_pending_reconciled_total',
+  help: 'Stale pending tasks reconciled with Redis, labeled by action (reenqueued/failed)',
+  labelNames: ['action'] as const,
+  registers: [metricsRegistry],
+});
+
+// Running 任务因 Redis 无 job 而标记失败的计数
+export const runningOrphanedByRedis = new client.Counter({
+  name: 'trawler_running_orphaned_by_redis_total',
+  help: 'Running tasks marked failed because no corresponding BullMQ job exists in Redis',
+  registers: [metricsRegistry],
+});

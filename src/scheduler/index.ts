@@ -3,6 +3,7 @@ process.env.LOG_FILE = process.env.LOG_FILE || 'scheduler.log';
 import { connectDatabase, disconnectDatabase } from '../services/database';
 import { config } from '../config';
 import { getLeaderElectionService } from '../services/leader-election';
+import { QueueService, getQueueService } from '../services/queue';
 import { runAllCleanups } from './cleanup';
 import { createLogger } from '../utils/logger';
 
@@ -11,11 +12,12 @@ const logger = createLogger('scheduler');
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 async function runOneCycle(
-  leaderService: ReturnType<typeof getLeaderElectionService> | null
+  leaderService: ReturnType<typeof getLeaderElectionService> | null,
+  queueService: QueueService | null
 ): Promise<void> {
   // If leader election is disabled, always run cleanup
   if (!leaderService) {
-    await runAllCleanups();
+    await runAllCleanups(queueService);
     return;
   }
 
@@ -24,7 +26,7 @@ async function runOneCycle(
   }
 
   if (leaderService.isCurrentLeader()) {
-    await runAllCleanups();
+    await runAllCleanups(queueService);
   } else {
     logger.debug('Not leader, skipping cleanup cycle');
   }
@@ -49,6 +51,22 @@ async function main(): Promise<void> {
 
   // Connect to MongoDB
   await connectDatabase();
+
+  // Initialize QueueService for Redis-aware cleanup
+  let queueService: QueueService | null = null;
+  try {
+    queueService = getQueueService();
+    const isHealthy = await queueService.ping();
+    if (isHealthy) {
+      logger.info('QueueService initialized, Redis-aware cleanup enabled');
+    } else {
+      logger.warn('Redis ping failed, Redis-aware cleanup disabled');
+      queueService = null;
+    }
+  } catch (error) {
+    logger.warn({ error: (error as Error).message }, 'Failed to initialize QueueService, Redis-aware cleanup disabled');
+    queueService = null;
+  }
 
   // Get leader election service (only if enabled)
   let leaderService: ReturnType<typeof getLeaderElectionService> | null = null;
@@ -75,6 +93,9 @@ async function main(): Promise<void> {
       if (leaderService) {
         await leaderService.close();
       }
+      if (queueService) {
+        await queueService.close();
+      }
       await disconnectDatabase();
     } catch (error) {
       logger.error({ error: (error as Error).message }, 'Error during shutdown');
@@ -84,23 +105,31 @@ async function main(): Promise<void> {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
+  // Run initial consistency check immediately on startup
+  logger.info('Running initial consistency check...');
+  try {
+    await runOneCycle(leaderService, queueService);
+  } catch (error) {
+    logger.error({ error: (error as Error).message }, 'Error in initial consistency check');
+  }
+
   logger.info('Scheduler started, entering cleanup loop...');
 
   // Main loop
   while (running) {
-    try {
-      await runOneCycle(leaderService);
-    } catch (error) {
-      logger.error({ error: (error as Error).message }, 'Error in cleanup cycle');
-    }
-
-    if (!running) break;
-
     // Wait for next cycle (interruptible)
     const sleep = interruptibleSleep(CLEANUP_INTERVAL_MS);
     currentSleep = sleep;
     await sleep.promise;
     currentSleep = null;
+
+    if (!running) break;
+
+    try {
+      await runOneCycle(leaderService, queueService);
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, 'Error in cleanup cycle');
+    }
   }
 
   logger.info('Scheduler loop exited');

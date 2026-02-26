@@ -3,6 +3,8 @@ import {
   cleanupTimedOutTasks,
   cleanupOrphanedTasks,
   cleanupExpiredTasks,
+  cleanupStalePendingTasks,
+  cleanupRunningTasksWithoutJob,
   runAllCleanups,
 } from '../../src/scheduler/cleanup';
 
@@ -13,6 +15,9 @@ jest.mock('../../src/config', () => ({
     task: {
       maxTimeoutMs: 7200000,
       retentionDays: 7,
+      pendingStaleMs: 1800000,
+      runningOrphanCheckMs: 600000,
+      stalePendingAction: 'reenqueue',
     },
     storage: {
       dataDir: '/tmp/test-data',
@@ -23,8 +28,24 @@ jest.mock('../../src/utils/logger', () => {
   const mockLogger = { info: jest.fn(), error: jest.fn(), debug: jest.fn(), warn: jest.fn() };
   return { createLogger: jest.fn(() => mockLogger), logger: mockLogger };
 });
+jest.mock('../../src/services/metrics', () => ({
+  stalePendingReconciled: { inc: jest.fn() },
+  runningOrphanedByRedis: { inc: jest.fn() },
+}));
 
 import { rm } from 'fs/promises';
+import { config } from '../../src/config';
+import { stalePendingReconciled, runningOrphanedByRedis } from '../../src/services/metrics';
+
+// Helper to create a mock QueueService
+function createMockQueueService() {
+  return {
+    getJob: jest.fn(),
+    addJob: jest.fn(),
+    ping: jest.fn().mockResolvedValue(true),
+    close: jest.fn().mockResolvedValue(undefined),
+  };
+}
 
 describe('scheduler cleanup', () => {
   beforeEach(() => {
@@ -132,6 +153,180 @@ describe('scheduler cleanup', () => {
     });
   });
 
+  describe('cleanupStalePendingTasks', () => {
+    it('pending 任务有 BullMQ job 时应跳过不处理', async () => {
+      const mockQS = createMockQueueService();
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([
+          { taskId: 'task_1', urls: ['http://a.com'], options: {} },
+        ]),
+      });
+      mockQS.getJob.mockResolvedValue({ id: 'task_1' }); // job exists
+
+      const result = await cleanupStalePendingTasks(mockQS as any);
+
+      expect(result).toEqual({ reenqueued: 0, failed: 0 });
+      expect(mockQS.addJob).not.toHaveBeenCalled();
+      expect(Task.updateOne).not.toHaveBeenCalled();
+    });
+
+    it('pending 任务无 BullMQ job + action=reenqueue 时应重新入队', async () => {
+      const mockQS = createMockQueueService();
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([
+          { taskId: 'task_1', urls: ['http://a.com'], options: {} },
+        ]),
+      });
+      mockQS.getJob.mockResolvedValue(undefined); // no job
+      mockQS.addJob.mockResolvedValue({});
+
+      const result = await cleanupStalePendingTasks(mockQS as any);
+
+      expect(result).toEqual({ reenqueued: 1, failed: 0 });
+      expect(mockQS.addJob).toHaveBeenCalledWith('task_1', ['http://a.com'], {});
+      expect(stalePendingReconciled.inc).toHaveBeenCalledWith({ action: 'reenqueued' });
+    });
+
+    it('pending 任务无 BullMQ job + action=fail 时应标记 FAILED', async () => {
+      const mockQS = createMockQueueService();
+      // Override config for this test
+      const cfg = config as any;
+      const originalAction = cfg.task.stalePendingAction;
+      cfg.task = { ...cfg.task, stalePendingAction: 'fail' };
+
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([
+          { taskId: 'task_1', urls: ['http://a.com'], options: {} },
+        ]),
+      });
+      mockQS.getJob.mockResolvedValue(undefined);
+      (Task.updateOne as jest.Mock).mockResolvedValue({ modifiedCount: 1 });
+
+      const result = await cleanupStalePendingTasks(mockQS as any);
+
+      expect(result).toEqual({ reenqueued: 0, failed: 1 });
+      expect(Task.updateOne).toHaveBeenCalledWith(
+        { taskId: 'task_1', status: TaskStatus.PENDING },
+        expect.objectContaining({
+          $set: expect.objectContaining({
+            status: TaskStatus.FAILED,
+            errorMessage: 'Stale pending task: no BullMQ job found in Redis',
+          }),
+        })
+      );
+      expect(stalePendingReconciled.inc).toHaveBeenCalledWith({ action: 'failed' });
+
+      // Restore config
+      cfg.task = { ...cfg.task, stalePendingAction: originalAction };
+    });
+
+    it('addJob 失败时应降级标记 FAILED', async () => {
+      const mockQS = createMockQueueService();
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([
+          { taskId: 'task_1', urls: ['http://a.com'], options: {} },
+        ]),
+      });
+      mockQS.getJob.mockResolvedValue(undefined);
+      mockQS.addJob.mockRejectedValue(new Error('Redis connection lost'));
+      (Task.updateOne as jest.Mock).mockResolvedValue({ modifiedCount: 1 });
+
+      const result = await cleanupStalePendingTasks(mockQS as any);
+
+      expect(result).toEqual({ reenqueued: 0, failed: 1 });
+      expect(Task.updateOne).toHaveBeenCalledWith(
+        { taskId: 'task_1', status: TaskStatus.PENDING },
+        expect.objectContaining({
+          $set: expect.objectContaining({
+            status: TaskStatus.FAILED,
+            errorMessage: expect.stringContaining('re-enqueue failed'),
+          }),
+        })
+      );
+      expect(stalePendingReconciled.inc).toHaveBeenCalledWith({ action: 'failed' });
+    });
+
+    it('pending 任务未超过阈值时不应处理', async () => {
+      const mockQS = createMockQueueService();
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([]),
+      });
+
+      const result = await cleanupStalePendingTasks(mockQS as any);
+
+      expect(result).toEqual({ reenqueued: 0, failed: 0 });
+      expect(mockQS.getJob).not.toHaveBeenCalled();
+    });
+
+    it('空结果集应返回 {reenqueued: 0, failed: 0}', async () => {
+      const mockQS = createMockQueueService();
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([]),
+      });
+
+      const result = await cleanupStalePendingTasks(mockQS as any);
+      expect(result).toEqual({ reenqueued: 0, failed: 0 });
+    });
+  });
+
+  describe('cleanupRunningTasksWithoutJob', () => {
+    it('running 任务无 BullMQ job 时应标记 FAILED', async () => {
+      const mockQS = createMockQueueService();
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([
+          { taskId: 'task_1' },
+          { taskId: 'task_2' },
+        ]),
+      });
+      mockQS.getJob.mockResolvedValue(undefined); // no jobs in Redis
+      (Task.updateMany as jest.Mock).mockResolvedValue({ modifiedCount: 2 });
+
+      const count = await cleanupRunningTasksWithoutJob(mockQS as any);
+
+      expect(count).toBe(2);
+      expect(Task.updateMany).toHaveBeenCalledWith(
+        {
+          taskId: { $in: ['task_1', 'task_2'] },
+          status: TaskStatus.RUNNING,
+        },
+        expect.objectContaining({
+          $set: expect.objectContaining({
+            status: TaskStatus.FAILED,
+            errorMessage: 'Running task orphaned: no BullMQ job found in Redis',
+          }),
+        })
+      );
+      expect(runningOrphanedByRedis.inc).toHaveBeenCalledWith(2);
+    });
+
+    it('running 任务有 BullMQ job 时应跳过', async () => {
+      const mockQS = createMockQueueService();
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([
+          { taskId: 'task_1' },
+        ]),
+      });
+      mockQS.getJob.mockResolvedValue({ id: 'task_1' }); // job exists
+
+      const count = await cleanupRunningTasksWithoutJob(mockQS as any);
+
+      expect(count).toBe(0);
+      // updateMany should not be called because no orphaned tasks
+    });
+
+    it('running 任务未超过阈值时不应处理', async () => {
+      const mockQS = createMockQueueService();
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([]),
+      });
+
+      const count = await cleanupRunningTasksWithoutJob(mockQS as any);
+
+      expect(count).toBe(0);
+      expect(mockQS.getJob).not.toHaveBeenCalled();
+    });
+  });
+
   describe('runAllCleanups', () => {
     it('应该依次执行所有清理策略', async () => {
       (Task.updateMany as jest.Mock).mockResolvedValue({ modifiedCount: 0 });
@@ -144,6 +339,47 @@ describe('scheduler cleanup', () => {
       // updateMany called 2 times (timedOut + orphaned)
       expect(Task.updateMany).toHaveBeenCalledTimes(2);
       // find called 1 time (expired)
+      expect(Task.find).toHaveBeenCalledTimes(1);
+    });
+
+    it('queueService 存在时应执行 5 个策略', async () => {
+      const mockQS = createMockQueueService();
+      (Task.updateMany as jest.Mock).mockResolvedValue({ modifiedCount: 0 });
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([]),
+      });
+
+      await runAllCleanups(mockQS as any);
+
+      // find called 3 times: stalePending + runningWithoutJob + expired
+      expect(Task.find).toHaveBeenCalledTimes(3);
+      // updateMany called 2 times: timedOut + orphaned (no running orphans found by Redis check)
+      expect(Task.updateMany).toHaveBeenCalledTimes(2);
+    });
+
+    it('queueService 为 null 时应只执行 3 个原有策略', async () => {
+      (Task.updateMany as jest.Mock).mockResolvedValue({ modifiedCount: 0 });
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([]),
+      });
+
+      await runAllCleanups(null);
+
+      // updateMany called 2 times (timedOut + orphaned)
+      expect(Task.updateMany).toHaveBeenCalledTimes(2);
+      // find called 1 time (expired only, no Redis-aware cleanups)
+      expect(Task.find).toHaveBeenCalledTimes(1);
+    });
+
+    it('无参调用应向后兼容', async () => {
+      (Task.updateMany as jest.Mock).mockResolvedValue({ modifiedCount: 0 });
+      (Task.find as jest.Mock).mockReturnValue({
+        limit: jest.fn().mockResolvedValue([]),
+      });
+
+      await runAllCleanups();
+
+      expect(Task.updateMany).toHaveBeenCalledTimes(2);
       expect(Task.find).toHaveBeenCalledTimes(1);
     });
   });

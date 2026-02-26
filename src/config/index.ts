@@ -58,6 +58,9 @@ export const config = Object.freeze({
   task: Object.freeze({
     maxTimeoutMs: parseIntWithValidation(process.env.MAX_TASK_TIMEOUT_MS, 7200000, 1000),
     retentionDays: parseIntWithValidation(process.env.RETENTION_DAYS, 7, 1, 365),
+    pendingStaleMs: parseIntWithValidation(process.env.PENDING_STALE_MS, 1800000, 60000),
+    runningOrphanCheckMs: parseIntWithValidation(process.env.RUNNING_ORPHAN_CHECK_MS, 600000, 60000),
+    stalePendingAction: (process.env.STALE_PENDING_ACTION || 'reenqueue') as 'reenqueue' | 'fail',
   }),
 
   proxy: Object.freeze({
