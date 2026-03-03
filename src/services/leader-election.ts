@@ -1,14 +1,14 @@
 import Redlock, { Lock } from 'redlock';
-import Redis from 'ioredis';
 import { config } from '../config';
 import { createLogger } from '../utils/logger';
+import { createRedisConnection, RedisConnection } from './redis';
 
 const logger = createLogger('leader-election');
 
 // Leader选举服务类
 export class LeaderElectionService {
   private redlock: Redlock;
-  private redis: Redis;
+  private redis: RedisConnection;
   private currentLock: Lock | null = null;
   private isLeader = false;
   private lockKey: string;
@@ -21,9 +21,7 @@ export class LeaderElectionService {
     this.podName = config.leaderElection.podName;
 
     // 创建 Redis 连接
-    this.redis = new Redis(config.redis.url, {
-      maxRetriesPerRequest: null,
-    });
+    this.redis = createRedisConnection({ maxRetriesPerRequest: null });
 
     this.redis.on('error', (err) => {
       logger.error({ error: err.message }, 'Redis connection error (leader-election)');

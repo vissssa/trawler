@@ -1,7 +1,6 @@
 import { Queue, QueueEvents, Job } from 'bullmq';
-import Redis from 'ioredis';
-import { config } from '../config';
 import { createLogger } from '../utils/logger';
+import { createRedisConnection, getBullMQPrefix, RedisConnection } from './redis';
 
 const logger = createLogger('queue');
 import { CrawlOptions } from '../models/Task';
@@ -17,28 +16,27 @@ export interface CrawlJobData {
 export class QueueService {
   private queue: Queue<CrawlJobData>;
   private queueEvents: QueueEvents;
-  private connection: Redis;
-  private queueEventsConnection: Redis;
+  private connection: RedisConnection;
+  private queueEventsConnection: RedisConnection;
 
   constructor() {
     // 创建 Redis 连接
-    this.connection = new Redis(config.redis.url, {
-      maxRetriesPerRequest: null,
-    });
+    this.connection = createRedisConnection({ maxRetriesPerRequest: null });
 
-    this.connection.on('error', (err) => {
+    this.connection.on('error', (err: Error) => {
       logger.error({ error: err.message }, 'Redis connection error (queue)');
     });
 
     // 创建独立的 Redis 连接用于 QueueEvents
     this.queueEventsConnection = this.connection.duplicate();
-    this.queueEventsConnection.on('error', (err) => {
+    this.queueEventsConnection.on('error', (err: Error) => {
       logger.error({ error: err.message }, 'Redis connection error (queueEvents)');
     });
 
     // 创建队列
     this.queue = new Queue<CrawlJobData>('crawl-tasks', {
       connection: this.connection,
+      prefix: getBullMQPrefix(),
       defaultJobOptions: {
         attempts: 3,
         backoff: {
@@ -58,6 +56,7 @@ export class QueueService {
     // 创建队列事件监听器
     this.queueEvents = new QueueEvents('crawl-tasks', {
       connection: this.queueEventsConnection,
+      prefix: getBullMQPrefix(),
     });
 
     this.setupEventHandlers();

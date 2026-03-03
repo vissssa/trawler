@@ -14,3 +14,6 @@ data:
   LOG_DIR: "/app/logs"
   LOG_LEVEL: "info"
   ENABLE_LEADER_ELECTION: "true"
+  REDIS_CLUSTER: "true"
+  MONGODB_DB_NAME: "trawler"
+  MONGODB_AUTH_SOURCE: "admin"

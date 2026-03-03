@@ -7,6 +7,8 @@ const logger = createLogger('database');
 export async function connectDatabase(): Promise<void> {
   try {
     await mongoose.connect(config.mongodb.url, {
+      dbName: config.mongodb.dbName,
+      authSource: config.mongodb.authSource,
       serverSelectionTimeoutMS: 5000,
     });
     logger.info('已连接到 MongoDB');

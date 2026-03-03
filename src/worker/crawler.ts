@@ -24,6 +24,7 @@ export function createCrawler(taskId: string, options: CrawlOptions): Playwright
   // Each task gets its own Crawlee Configuration to avoid state pollution
   const crawleeConfig = new Configuration({
     persistStorage: false,
+    availableMemoryRatio: 0.8,
     storageClientOptions: {
       localDataDirectory: `/tmp/crawlee-${taskId}`,
     },

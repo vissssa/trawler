@@ -1,7 +1,6 @@
 process.env.LOG_FILE = process.env.LOG_FILE || 'worker.log';
 
 import { Worker, Job } from 'bullmq';
-import Redis from 'ioredis';
 import { rm } from 'fs/promises';
 import path from 'path';
 import { config } from '../config';
@@ -10,6 +9,7 @@ import { Task, TaskStatus } from '../models/Task';
 import type { CrawlJobData } from '../services/queue';
 import { createCrawler } from './crawler';
 import { createLogger } from '../utils/logger';
+import { createRedisConnection, getBullMQPrefix } from '../services/redis';
 
 const logger = createLogger('worker:consumer');
 
@@ -106,13 +106,12 @@ async function main(): Promise<void> {
   await connectDatabase();
 
   // Create Redis connection for BullMQ Worker
-  const connection = new Redis(config.redis.url, {
-    maxRetriesPerRequest: null,
-  });
+  const connection = createRedisConnection({ maxRetriesPerRequest: null });
 
   // Create BullMQ Worker
   const worker = new Worker<CrawlJobData>(QUEUE_NAME, processJob, {
     connection,
+    prefix: getBullMQPrefix(),
     concurrency: 1, // One crawl task at a time; Crawlee handles page-level concurrency
     lockDuration: 300000, // 5 minutes - crawl tasks can take a while
     stalledInterval: 600000, // 2x lockDuration to avoid false stalled detection

@@ -5,13 +5,15 @@
 Trawler 是面向大模型知识库的网页爬虫 API 服务，支持静态/动态网页爬取、递归爬取和内容过滤。
 
 **技术栈：** Node.js, TypeScript, Fastify, Crawlee, Playwright, BullMQ, MongoDB, Redis
-**仓库地址：** https://github.com/vissssa/trawler
 
 ## 项目结构
 
 ```
+├── .comate/rules/
+│   └── trawler.mdr                # Comate 规则文件（同步自 CLAUDE.md）
 ├── .dockerignore                  # Docker 构建排除规则
 ├── Dockerfile                     # 三阶段构建（deps → builder → runtime）
+├── ci.yml                         # iCode CI 流水线配置（构建 + 产出 output.tar.gz）
 ├── build/
 │   ├── base/
 │   │   ├── Dockerfile.amd64       # amd64 base 镜像（node:22-slim + Playwright Chromium）
@@ -27,8 +29,27 @@ Trawler 是面向大模型知识库的网页爬虫 API 服务，支持静态/动
 │   ├── scheduler.yaml             # Scheduler Deployment
 │   └── hpa.yaml                   # HPA（API + Worker 自动扩缩）
 ├── scripts/
-│   └── dev.sh                     # 一键本地启动脚本（API + Worker + Scheduler）
+│   ├── dev.sh                     # 一键本地启动脚本（API + Worker + Scheduler）
+│   └── build.sh                   # CI 构建脚本（npm ci + tsc → output/）
+├── example.md                     # 使用示例文档（流程图 + 静态/动态页面完整示例）
+├── example/
+│   ├── mermaid-diagram-*.png      # 架构图和时序图（Mermaid 导出）
+│   ├── screenshot-static.png      # 静态页面截图示例（example.com）
+│   ├── screenshot-dynamic.png     # 动态页面截图示例（quotes.toscrape.com/js/）
+│   ├── output-static.md           # 静态页面 Markdown 产出示例
+│   └── output-dynamic.md          # 动态页面 Markdown 产出示例
+├── docs/plans/
+│   ├── IMPLEMENTATION_SUMMARY.md  # 实现总结
+│   ├── 2026-02-12-trawler-implementation-zh.md
+│   └── 2026-02-12-web-crawler-api-design.md
 ├── tests/
+│   ├── api/                       # API 路由和服务器测试
+│   ├── config/                    # 配置模块测试
+│   ├── models/                    # MongoDB 模型测试（含 mongodb-memory-server）
+│   ├── services/                  # 数据库/队列/Leader 选举测试
+│   ├── utils/                     # 日志工具测试
+│   ├── worker/                    # Worker handlers/crawler/consumer 测试
+│   ├── scheduler/                 # Scheduler cleanup/index 测试
 │   └── integration/
 │       ├── api-e2e.ts             # API 集成测试（22 组，72 断言）
 │       └── crawl-e2e.ts           # 端到端爬虫流程测试（10 步，38 断言）
@@ -78,6 +99,7 @@ npm run dev:scheduler   # 开发模式启动 Scheduler
 npm test                # 运行测试
 npm run lint            # ESLint 检查
 npm run format          # Prettier 格式化
+bash scripts/build.sh   # CI 构建（npm ci + tsc → output/）
 ```
 
 ## 关键配置项（.env）
@@ -103,12 +125,13 @@ npm run format          # Prettier 格式化
 
 所有端点按 `Tasks`（任务管理）和 `System`（健康检查与监控）两个 tag 分组，支持在页面内直接发起请求（Try it out）。
 
+完整使用示例（含静态/动态页面爬取流程、请求/响应、产出物截图）见 [example.md](example.md)。
+
 ## 截图与 PDF 导出
 
 创建任务时通过 `options` 启用截图和/或 PDF 导出：
 
 ```bash
-# 创建包含截图和 PDF 的爬取任务
 curl -X POST http://localhost:3000/tasks \
   -H 'Content-Type: application/json' \
   -d '{
@@ -158,68 +181,61 @@ curl -O http://localhost:3000/tasks/{taskId}/files?type=screenshot&format=single
 
 ## 实现进度
 
-### ✅ 阶段1：API 基础架构（任务1-7）
+### ✅ 阶段1：API 基础架构
 - 项目初始化 + 工具链
 - 配置管理 + 日志系统
 - Task MongoDB 模型
 - BullMQ 队列服务
 - Leader 选举（Redlock）
 - Fastify 服务器 + 8个 API 端点（含文件下载）
-- 服务器启动修复
 
 ### ✅ 阶段2：Worker 爬虫 + Scheduler 调度
-- Bug 修复：taskId 改用 schema default 生成
 - Worker handlers：HTML 提取 + MongoDB 原子更新 + 递归爬取
-- Worker crawler：PlaywrightCrawler 工厂，映射 CrawlOptions（depth/pages/timeout/rateLimit/auth）
+- Worker crawler：PlaywrightCrawler 工厂，映射 CrawlOptions
 - Worker consumer：BullMQ Worker，任务生命周期管理，优雅关闭
 - Scheduler cleanup：超时/孤儿/过期三种清理策略
 - Scheduler index：Leader 选举 + 5分钟定时循环
 
-### ✅ 阶段2.5：运维优化
-- 日志系统：双输出（控制台 + 文件），每进程一个日志文件（api.log/worker.log/scheduler.log）
-- Leader 选举修复：移除手动 setInterval 续期，改用 Redlock v5 内置 automaticExtensionThreshold
-- 各服务模块使用命名 logger（database/queue/leader-election/api/api:routes）
-- 端到端验证：API → BullMQ → Worker → Crawlee+Playwright → 文件保存 → MongoDB 更新
-
 ### ✅ 阶段3：功能增强
-1. ~~Worker/Scheduler 单元测试（Mock Crawlee、BullMQ、fs）~~ ✅
-2. ~~文件下载端点（`GET /tasks/:taskId/files`）~~ ✅
-3. ~~修复已有测试问题（API 测试的 Redis mock、路由重复注册）~~ ✅
-4. ~~HTML → Markdown 转换（turndown）~~ ✅
-5. ~~URL 去重（API 层 `new Set` + Worker 层 Crawlee RequestQueue 内建去重）~~ ✅
-6. ~~CSS 选择器内容筛选（`contentSelector` 选项，cheerio 提取）~~ ✅
-7. ~~Markdown 链接绝对化（cheerio 遍历 `[href]`/`[src]`，`new URL` 转绝对）~~ ✅
+- Worker/Scheduler 单元测试
+- HTML → Markdown 转换（turndown）
+- URL 去重（API 层 + Worker 层）
+- CSS 选择器内容筛选（contentSelector）
+- Markdown 链接绝对化
 
 ### ✅ 阶段4：监控与可观测性
-5. ~~Prometheus 指标端点（`GET /metrics`）~~ ✅（prom-client，8个自定义指标 + 默认进程指标）
-6. ~~结构化错误处理（自定义错误类型）~~ ✅（AppError 基类 + NotFoundError/BadRequestError/ConflictError/InternalError）
+- Prometheus 指标端点（prom-client，8个自定义指标 + 默认进程指标）
+- 结构化错误处理（AppError 基类 + 派生错误类）
 
-### ✅ 阶段5：部署与运维（部分完成）
-7. ~~Dockerfile（多阶段构建 + Playwright 预装）~~ ✅
-8. ~~K8s 部署配置（Deployment/Service/PVC/ConfigMap/HPA）~~ ✅
-9. ~~CI/CD（GitHub Actions）~~ — 不需要
+### ✅ 阶段5：部署与运维
+- Dockerfile（多阶段构建 + Playwright 预装）
+- K8s 部署配置（Deployment/Service/PVC/ConfigMap/HPA）
 
-### ✅ 阶段6：高级功能（部分完成）
-10. ~~代理轮换~~ ✅（task 级别 + 全局 PROXY_URLS，Crawlee ProxyConfiguration round-robin）
-11. ~~内容过滤（CSS 选择器）~~ ✅（通过 `contentSelector` 实现）
-12. ~~截图 / PDF 导出~~ ✅（`captureScreenshot` PNG + `capturePdf` A4 PDF）
+### ✅ 阶段6：高级功能
+- 代理轮换（task 级别 + 全局 PROXY_URLS）
+- 内容过滤（CSS 选择器）
+- 截图/PDF 导出（captureScreenshot + capturePdf）
 
 ### ✅ 阶段7：Redis 数据一致性修复
-13. ~~Scheduler Redis 感知清理~~ ✅（stale pending 任务检测 + 重新入队/标记失败，running 任务 Redis 孤儿检测）
-14. ~~启动时一致性检查~~ ✅（Scheduler 启动后立即执行一次全量清理，快速修复 Redis 重装/清空后的数据不一致）
-15. ~~Prometheus 监控指标~~ ✅（`stale_pending_reconciled_total` + `running_orphaned_by_redis_total`）
+- Scheduler Redis 感知清理（stale pending + running orphan）
+- 启动时一致性检查
+- Prometheus 监控指标
 
-### ✅ 阶段8：API 文档
-16. ~~Swagger UI 交互式文档~~ ✅（`@fastify/swagger` + `@fastify/swagger-ui`，`/docs` 路径，全部端点含 tags/summary/description，POST /tasks 含参数说明和 Try it out 示例）
+### ✅ 阶段8：API 文档与使用示例
+- Swagger UI 交互式文档（@fastify/swagger + @fastify/swagger-ui）
+- example.md 使用文档（Mermaid 流程图 + 静态/动态页面示例 + 产出物截图）
+- README.md 重构（职责分离：README 负责 API 参考，example.md 负责实战示例）
+
+### ✅ 阶段9：CI/CD 与构建
+- iCode CI 流水线（ci.yml，BuildCloud Node.js 22）
+- 构建脚本（scripts/build.sh：npm ci + tsc → output/）
+- 两层 Docker 镜像架构（base + 打包镜像）
+- iCode Gerrit 代码提交
+- Comate 规则同步（.comate/rules/trawler.mdr）
 
 ## 技术债务
 
-| 项目 | 优先级 | 说明 |
-|------|--------|------|
-| ~~server.ts lint 错误~~ | ~~高~~ | ✅ 已修复：unused-vars 加 `_` 前缀，`as any` 改用 `FastifyError` 泛型 |
-| ~~API 测试路由重复注册~~ | ~~中~~ | ✅ 已修复：routes.test.ts 移除多余的 registerTaskRoutes 调用 |
-| ~~集成测试需要 MongoDB~~ | ~~中~~ | ✅ 已修复：Task.test.ts 改用 mongodb-memory-server |
-| ~~配置不可变性~~ | ~~低~~ | ✅ 已修复：config 及嵌套对象均 Object.freeze() |
+所有已知技术债务均已修复。
 
 ## 编码规范
 

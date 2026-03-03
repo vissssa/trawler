@@ -29,10 +29,13 @@ export const config = Object.freeze({
 
   redis: Object.freeze({
     url: process.env.REDIS_URL || 'redis://localhost:6379',
+    isCluster: process.env.REDIS_CLUSTER === 'true',
   }),
 
   mongodb: Object.freeze({
     url: process.env.MONGODB_URL || 'mongodb://localhost:27017/trawler',
+    dbName: process.env.MONGODB_DB_NAME || 'trawler',
+    authSource: process.env.MONGODB_AUTH_SOURCE || 'admin',
   }),
 
   api: Object.freeze({

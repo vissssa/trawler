@@ -8,3 +8,4 @@ data/
 coverage/
 playwright-state/
 storage/
+__pycache__/
