@@ -38,6 +38,20 @@ Trawler 是面向大模型知识库的网页爬虫 API 服务，支持静态/动
 │   ├── screenshot-dynamic.png     # 动态页面截图示例（quotes.toscrape.com/js/）
 │   ├── output-static.md           # 静态页面 Markdown 产出示例
 │   └── output-dynamic.md          # 动态页面 Markdown 产出示例
+├── sample-site/                   # 爬虫测试用示例网站（Express + EJS）
+│   ├── app.js                     # Express 服务器入口（端口 3001）
+│   ├── package.json               # 独立依赖（express, ejs, express-ejs-layouts）
+│   └── views/
+│       ├── layouts/main.ejs       # 页面布局模板
+│       └── pages/                 # 7 类测试场景页面
+│           ├── index.ejs          # 首页（场景导航）
+│           ├── static/            # 静态内容（article, about）
+│           ├── dynamic/           # JS 动态渲染（fetch-content, lazy-list）
+│           ├── blog/              # 多层级链接（列表/详情/分类/分页）
+│           ├── selectors/         # CSS 选择器过滤（mixed）
+│           ├── media/             # 长页面 + 富媒体（long-page, gallery）
+│           ├── edge/              # 慢响应/错误（slow, error-500, not-found）
+│           └── iframe/            # iframe 嵌套（nested, embed-content）
 ├── docs/plans/
 │   ├── IMPLEMENTATION_SUMMARY.md  # 实现总结
 │   ├── 2026-02-12-trawler-implementation-zh.md
@@ -100,6 +114,9 @@ npm test                # 运行测试
 npm run lint            # ESLint 检查
 npm run format          # Prettier 格式化
 bash scripts/build.sh   # CI 构建（npm ci + tsc → output/）
+
+# 示例网站（爬虫测试目标）
+cd sample-site && npm install && npm start   # 启动测试站（端口 3001）
 ```
 
 ## 关键配置项（.env）
@@ -178,6 +195,24 @@ curl -O http://localhost:3000/tasks/{taskId}/files?type=screenshot&format=single
 | `markdown` | text/markdown | 由 HTML 转换的 Markdown |
 | `screenshot` | image/png | 页面全屏截图 |
 | `pdf` | application/pdf | A4 PDF 导出 |
+
+## 示例网站（sample-site）
+
+`sample-site/` 是一个独立的 Express + EJS 网站，作为 Trawler 爬虫的测试目标。默认端口 3001。
+
+**测试场景覆盖：**
+
+| 场景 | 路径 | 测试目标 |
+|------|------|----------|
+| 静态内容 | `/static/article`, `/static/about` | HTML→Markdown 转换、排版元素（表格/代码块/列表/引用） |
+| JS 动态渲染 | `/dynamic/fetch-content`, `/dynamic/lazy-list` | Playwright 动态渲染、fetch API 加载、setTimeout 延迟渲染 |
+| 多层级链接 | `/blog`, `/blog/post/:id`, `/blog/category/:name` | 递归爬取（maxDepth/maxPages）、分页、同域链接发现 |
+| CSS 选择器 | `/selectors/mixed` | contentSelector 过滤（`.main-content`/`.sidebar`/`.ad-banner`） |
+| 长页面 | `/media/long-page` | 截图高度降级（>16384px）|
+| 富媒体 | `/media/gallery` | SVG/图片/视频/音频/Canvas |
+| 慢响应/错误 | `/edge/slow?delay=ms`, `/edge/error-500`, `/edge/not-found` | 超时处理、HTTP 错误码 |
+| iframe 嵌套 | `/iframe/nested` | iframe 内容隔离 |
+| JSON API | `/api/posts`, `/api/quotes?delay=ms` | 供动态页面 fetch 使用 |
 
 ## 实现进度
 

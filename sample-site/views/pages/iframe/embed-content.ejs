@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>嵌入内容</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.8;
+      padding: 1.5rem;
+      color: #333;
+      background: #fafafa;
+    }
+    h2 { color: #1a1a2e; margin-bottom: 0.5rem; }
+    p { margin-bottom: 0.8rem; }
+    .highlight {
+      background: #e8f5e9;
+      padding: 1rem;
+      border-radius: 6px;
+      border-left: 4px solid #4caf50;
+    }
+  </style>
+</head>
+<body>
+  <h2>这是 iframe 中的内容</h2>
+  <p>这段内容运行在独立的 iframe 中，拥有自己的 HTML 文档结构和样式。</p>
+
+  <div class="highlight">
+    <p><strong>提示：</strong>爬虫获取外层页面时，这段文字不会出现在主页面的 HTML 中。只有直接访问 <code>/iframe/embed-content</code> 才能获取到这些内容。</p>
+  </div>
+
+  <h3>iframe 中的列表</h3>
+  <ul>
+    <li>条目一：iframe 内的内容是完全独立的文档</li>
+    <li>条目二：样式不会继承自父页面</li>
+    <li>条目三：JavaScript 作用域也是隔离的</li>
+  </ul>
+
+  <p>当前时间（由 iframe 内 JS 渲染）：<span id="time">加载中...</span></p>
+  <script>
+    document.getElementById('time').textContent = new Date().toLocaleString('zh-CN');
+  </script>
+</body>
+</html>

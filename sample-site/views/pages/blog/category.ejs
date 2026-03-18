@@ -1,0 +1,17 @@
+<h1>分类：<%= category %></h1>
+<p>以下是 <span class="tag"><%= category %></span> 分类下的所有文章：</p>
+
+<% if (posts.length === 0) { %>
+  <div class="card">
+    <p>该分类下暂无文章。</p>
+  </div>
+<% } else { %>
+  <% posts.forEach(post => { %>
+    <div class="card">
+      <h2><a href="/blog/post/<%= post.id %>"><%= post.title %></a></h2>
+      <p class="meta">日期：<%= post.date %></p>
+    </div>
+  <% }); %>
+<% } %>
+
+<p><a href="/blog">← 返回博客列表</a></p>

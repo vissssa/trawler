@@ -1,0 +1,16 @@
+<div class="card" style="text-align: center;">
+  <h1 style="color: #c62828; font-size: 4rem;">500</h1>
+  <h2>服务器内部错误</h2>
+  <p>服务器遇到意外错误，无法完成请求。</p>
+  <p>此页面故意返回 HTTP 500 状态码，用于测试爬虫的错误处理和重试逻辑。</p>
+
+  <div style="margin: 2rem 0; padding: 1rem; background: #ffebee; border-radius: 8px; text-align: left;">
+    <h3>错误详情</h3>
+    <pre><code>Error: Internal Server Error
+    at GET /edge/error-500
+    Timestamp: <%= new Date().toISOString() %>
+    Request-ID: <%= Math.random().toString(36).substring(2, 10) %></code></pre>
+  </div>
+
+  <p><a href="/" class="btn">返回首页</a></p>
+</div>

@@ -1,0 +1,19 @@
+<div class="card" style="text-align: center;">
+  <h1 style="color: #e65100;">慢响应页面</h1>
+  <p>本页面在服务端延迟了 <strong><%= delay %> 毫秒</strong>后才返回响应。</p>
+  <p>如果你看到此内容，说明请求在超时时间内成功完成。</p>
+
+  <div style="margin: 2rem 0; padding: 2rem; background: #fff3e0; border-radius: 8px;">
+    <h2>测试说明</h2>
+    <p>你可以通过 URL 参数自定义延迟时间：</p>
+    <ul style="list-style: none; padding: 0;">
+      <li><a href="/edge/slow?delay=1000"><code>/edge/slow?delay=1000</code></a> — 延迟 1 秒</li>
+      <li><a href="/edge/slow?delay=3000"><code>/edge/slow?delay=3000</code></a> — 延迟 3 秒</li>
+      <li><a href="/edge/slow?delay=5000"><code>/edge/slow?delay=5000</code></a> — 延迟 5 秒（默认）</li>
+      <li><a href="/edge/slow?delay=10000"><code>/edge/slow?delay=10000</code></a> — 延迟 10 秒</li>
+      <li><a href="/edge/slow?delay=30000"><code>/edge/slow?delay=30000</code></a> — 延迟 30 秒</li>
+    </ul>
+  </div>
+
+  <p><a href="/" class="btn">返回首页</a></p>
+</div>

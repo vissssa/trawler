@@ -1,0 +1,30 @@
+<h1>技术博客</h1>
+<p>最新技术文章，涵盖前端、后端、运维和架构等领域。</p>
+
+<% posts.forEach(post => { %>
+  <div class="card">
+    <h2><a href="/blog/post/<%= post.id %>"><%= post.title %></a></h2>
+    <p class="meta">
+      分类：<a href="/blog/category/<%= post.category %>"><span class="tag"><%= post.category %></span></a>
+      | 日期：<%= post.date %>
+    </p>
+  </div>
+<% }); %>
+
+<div style="margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center;">
+  <% if (page > 1) { %>
+    <a href="/blog?page=<%= page - 1 %>" class="btn">上一页</a>
+  <% } %>
+
+  <% for (let i = 1; i <= totalPages; i++) { %>
+    <% if (i === page) { %>
+      <span class="btn" style="background: #666; cursor: default;"><%= i %></span>
+    <% } else { %>
+      <a href="/blog?page=<%= i %>" class="btn"><%= i %></a>
+    <% } %>
+  <% } %>
+
+  <% if (page < totalPages) { %>
+    <a href="/blog?page=<%= page + 1 %>" class="btn">下一页</a>
+  <% } %>
+</div>

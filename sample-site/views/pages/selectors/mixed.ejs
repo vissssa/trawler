@@ -1,0 +1,81 @@
+<h1>CSS 选择器测试页</h1>
+<p>本页面包含多个具有不同 CSS 类名的区域，用于测试 Trawler 的 <code>contentSelector</code> 内容筛选功能。</p>
+<p>推荐测试的选择器组合：</p>
+<ul>
+  <li><code>.main-content</code> — 仅提取正文区域</li>
+  <li><code>.sidebar</code> — 仅提取侧边栏</li>
+  <li><code>[".main-content", ".sidebar"]</code> — 同时提取正文和侧边栏</li>
+  <li><code>#article-body</code> — 通过 ID 选择器提取</li>
+</ul>
+
+<div style="display: grid; grid-template-columns: 1fr 300px; gap: 1.5rem; margin-top: 1.5rem;">
+  <!-- 主内容区域 -->
+  <div>
+    <div class="main-content card">
+      <div id="article-body">
+        <h2>分布式系统中的一致性模型</h2>
+        <p>分布式系统中，一致性（Consistency）是指多个节点之间数据的一致程度。常见的一致性模型包括：</p>
+
+        <h3>强一致性</h3>
+        <p>所有节点在任意时刻看到的数据完全相同。这种模型提供了最直观的语义，但通常以性能为代价。典型实现包括 Raft 和 Paxos 共识算法。</p>
+
+        <h3>最终一致性</h3>
+        <p>系统保证在没有新的更新操作后，所有节点最终会达到一致状态。这是 NoSQL 数据库（如 DynamoDB、Cassandra）常用的一致性模型。</p>
+
+        <h3>因果一致性</h3>
+        <p>保证具有因果关系的操作在所有节点上以相同顺序可见。例如，如果操作 A 导致了操作 B，那么所有节点都会先看到 A 再看到 B。</p>
+
+        <table>
+          <thead>
+            <tr><th>一致性模型</th><th>延迟</th><th>可用性</th><th>适用场景</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>强一致性</td><td>高</td><td>低</td><td>金融交易、库存管理</td></tr>
+            <tr><td>最终一致性</td><td>低</td><td>高</td><td>社交媒体、日志系统</td></tr>
+            <tr><td>因果一致性</td><td>中</td><td>中</td><td>协作编辑、消息系统</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 广告区域 -->
+    <div class="ad-banner card" style="background: #fff3e0; border-left: 4px solid #ff9800;">
+      <h3>广告推广</h3>
+      <p>这是一条广告内容，用于测试内容过滤。使用 <code>contentSelector: ".main-content"</code> 可以排除此区域。</p>
+      <p>限时优惠！购买云服务器享 8 折折扣，新用户首月免费。</p>
+      <a href="#" class="btn" style="background: #ff9800;">了解详情</a>
+    </div>
+  </div>
+
+  <!-- 侧边栏 -->
+  <div class="sidebar">
+    <div class="card">
+      <h3>热门标签</h3>
+      <div>
+        <span class="tag">分布式系统</span>
+        <span class="tag">一致性</span>
+        <span class="tag">CAP 定理</span>
+        <span class="tag">Raft</span>
+        <span class="tag">Paxos</span>
+        <span class="tag">CRDT</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>推荐阅读</h3>
+      <ul>
+        <li><a href="/blog/post/3">Redis 缓存策略详解</a></li>
+        <li><a href="/blog/post/4">Kubernetes 入门指南</a></li>
+        <li><a href="/static/article">Node.js 事件循环</a></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>归档</h3>
+      <ul>
+        <li><a href="/blog">2026 年 3 月</a>（5 篇）</li>
+        <li><a href="/blog">2026 年 2 月</a>（3 篇）</li>
+      </ul>
+    </div>
+  </div>
+</div>

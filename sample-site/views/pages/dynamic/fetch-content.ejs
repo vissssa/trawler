@@ -1,0 +1,36 @@
+<h1>API 动态加载示例</h1>
+<p>本页面的内容完全通过 JavaScript <code>fetch()</code> 从 API 加载并渲染。如果你使用静态 HTTP 客户端（不执行 JS），你只会看到加载提示。</p>
+
+<div id="loading" class="card">
+  <p>正在加载文章列表...</p>
+</div>
+
+<div id="posts-container"></div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', async () => {
+    const loading = document.getElementById('loading');
+    const container = document.getElementById('posts-container');
+
+    try {
+      const response = await fetch('/api/posts');
+      const posts = await response.json();
+
+      loading.style.display = 'none';
+
+      posts.forEach(post => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <h2>${post.title}</h2>
+          <p class="meta">作者：${post.author} | 日期：${post.date}</p>
+          <p>${post.content}</p>
+          <div>${post.tags.map(t => '<span class="tag">' + t + '</span>').join('')}</div>
+        `;
+        container.appendChild(card);
+      });
+    } catch (error) {
+      loading.innerHTML = '<p style="color:red;">加载失败：' + error.message + '</p>';
+    }
+  });
+</script>

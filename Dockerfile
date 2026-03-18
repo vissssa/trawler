@@ -26,6 +26,19 @@ COPY src ./src
 RUN npm ci --ignore-scripts && npm run build
 
 # ============================================================
+# Stage 2.5: Install sample-site dependencies
+# ============================================================
+FROM node:22-slim AS sample-site-deps
+
+WORKDIR /app/sample-site
+
+COPY sample-site/package.json sample-site/package-lock.json* ./
+RUN npm ci --omit=dev 2>/dev/null || npm install --omit=dev
+
+COPY sample-site/app.js ./
+COPY sample-site/views ./views
+
+# ============================================================
 # Stage 3: Runtime — Playwright official image with Chromium
 # ============================================================
 FROM mcr.microsoft.com/playwright:v1.58.2-noble AS runtime
@@ -49,6 +62,9 @@ COPY --from=builder /app/dist ./dist
 
 # Copy package.json (needed by Node.js for module resolution)
 COPY package.json ./
+
+# Copy sample-site from its build stage
+COPY --from=sample-site-deps /app/sample-site ./sample-site
 
 # Create bml user/group (601:601) and data/log directories
 RUN groupadd -g 601 bml && \

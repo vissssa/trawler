@@ -1,0 +1,67 @@
+<h1>Trawler 爬虫测试站</h1>
+<p>本站专为 <strong>Trawler</strong> 网页爬虫服务提供测试页面，涵盖多种页面类型和边界场景。</p>
+
+<h2>测试场景</h2>
+
+<div class="card">
+  <h3>1. 静态内容页面</h3>
+  <p>纯 HTML 服务端渲染页面，包含丰富的排版元素（标题、段落、列表、表格、代码块、引用等），用于测试基本爬取和 HTML → Markdown 转换。</p>
+  <ul>
+    <li><a href="/static/article">技术文章</a> — 完整的文章排版，包含代码示例和表格</li>
+    <li><a href="/static/about">关于本站</a> — 简单介绍页面</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>2. JS 动态渲染页面</h3>
+  <p>内容通过 JavaScript 在客户端动态加载和渲染，需要 Playwright 等无头浏览器才能获取完整内容。</p>
+  <ul>
+    <li><a href="/dynamic/fetch-content">API 动态加载</a> — 页面通过 fetch 调用 API 获取并渲染内容</li>
+    <li><a href="/dynamic/lazy-list">延迟加载列表</a> — 内容通过 setTimeout 分批加载显示</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>3. 多层级链接结构</h3>
+  <p>具有分页、分类和详情页的博客结构，用于测试递归爬取（<code>maxDepth</code>、<code>maxPages</code>）和同域链接发现。</p>
+  <ul>
+    <li><a href="/blog">博客首页</a> — 文章列表，含分页导航</li>
+    <li><a href="/blog/category/运维">分类页面</a> — 按分类筛选</li>
+    <li><a href="/blog/post/1">文章详情</a> — 含相关文章推荐链接</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>4. CSS 选择器过滤</h3>
+  <p>包含广告栏、侧边栏和正文的复杂布局页面，用于测试 <code>contentSelector</code> 内容筛选功能。</p>
+  <ul>
+    <li><a href="/selectors/mixed">混合布局页面</a> — 正文 <code>.main-content</code>、侧边栏 <code>.sidebar</code>、广告 <code>.ad-banner</code></li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>5. 长页面 + 富媒体</h3>
+  <p>超长内容页面（高度超过 16384px）和包含多种媒体类型的页面，用于测试截图降级逻辑和富媒体处理。</p>
+  <ul>
+    <li><a href="/media/long-page">超长页面</a> — 高度超过 16384px，测试截图自动降级</li>
+    <li><a href="/media/gallery">富媒体画廊</a> — 图片、SVG、视频嵌入等多种媒体元素</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>6. 慢响应 / 错误页面</h3>
+  <p>模拟网络异常和服务端错误场景，用于测试爬虫的容错和超时处理能力。</p>
+  <ul>
+    <li><a href="/edge/slow">慢响应</a> — 延迟 5 秒返回（可自定义 <code>?delay=毫秒数</code>）</li>
+    <li><a href="/edge/error-500">500 错误</a> — 服务器内部错误</li>
+    <li><a href="/edge/not-found">404 未找到</a> — 页面不存在</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>7. iframe 嵌套</h3>
+  <p>使用 iframe 嵌入其他页面的测试场景。</p>
+  <ul>
+    <li><a href="/iframe/nested">iframe 嵌套页面</a> — 通过 iframe 嵌入静态内容</li>
+  </ul>
+</div>

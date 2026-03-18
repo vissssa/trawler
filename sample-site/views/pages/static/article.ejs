@@ -1,0 +1,120 @@
+<article class="card">
+  <h1>深入理解 Node.js 事件循环</h1>
+  <p class="meta">作者：张三 | 发布日期：2026-03-18 | 分类：<a href="/blog/category/后端">后端</a></p>
+
+  <h2>什么是事件循环？</h2>
+  <p>Node.js 的事件循环（Event Loop）是其核心机制之一。它使得单线程的 Node.js 能够处理大量并发 I/O 操作，而无需为每个连接创建新的线程。</p>
+
+  <blockquote>
+    "事件循环是 Node.js 处理非阻塞 I/O 操作的基础，尽管 JavaScript 是单线程的，但通过将操作委托给系统内核来实现并发。" — Node.js 官方文档
+  </blockquote>
+
+  <h2>事件循环的六个阶段</h2>
+  <p>每次事件循环迭代都会按顺序经过以下六个阶段：</p>
+
+  <ol>
+    <li><strong>timers</strong> — 执行 <code>setTimeout()</code> 和 <code>setInterval()</code> 的回调</li>
+    <li><strong>pending callbacks</strong> — 执行延迟到下一次循环的 I/O 回调</li>
+    <li><strong>idle, prepare</strong> — 仅供内部使用</li>
+    <li><strong>poll</strong> — 检索新的 I/O 事件，执行 I/O 相关回调</li>
+    <li><strong>check</strong> — 执行 <code>setImmediate()</code> 回调</li>
+    <li><strong>close callbacks</strong> — 执行关闭事件回调，如 <code>socket.on('close')</code></li>
+  </ol>
+
+  <h2>代码示例</h2>
+  <p>下面的代码展示了不同异步 API 的执行顺序：</p>
+
+  <pre><code>const fs = require('fs');
+
+console.log('1: 同步代码开始');
+
+setTimeout(() => {
+  console.log('2: setTimeout 回调');
+}, 0);
+
+setImmediate(() => {
+  console.log('3: setImmediate 回调');
+});
+
+fs.readFile(__filename, () => {
+  console.log('4: I/O 回调');
+
+  setTimeout(() => {
+    console.log('5: I/O 中的 setTimeout');
+  }, 0);
+
+  setImmediate(() => {
+    console.log('6: I/O 中的 setImmediate');
+  });
+});
+
+process.nextTick(() => {
+  console.log('7: process.nextTick 回调');
+});
+
+Promise.resolve().then(() => {
+  console.log('8: Promise.then 微任务');
+});
+
+console.log('9: 同步代码结束');</code></pre>
+
+  <p>输出顺序为：<code>1 → 9 → 7 → 8 → 2 → 3 → 4 → 6 → 5</code></p>
+
+  <h2>性能对比</h2>
+  <p>下表对比了不同 Web 框架在 Node.js 上的并发性能表现：</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>框架</th>
+        <th>请求/秒</th>
+        <th>延迟(ms)</th>
+        <th>内存占用(MB)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Fastify</td>
+        <td>78,000</td>
+        <td>1.2</td>
+        <td>45</td>
+      </tr>
+      <tr>
+        <td>Express</td>
+        <td>42,000</td>
+        <td>2.3</td>
+        <td>52</td>
+      </tr>
+      <tr>
+        <td>Koa</td>
+        <td>54,000</td>
+        <td>1.8</td>
+        <td>48</td>
+      </tr>
+      <tr>
+        <td>Hapi</td>
+        <td>35,000</td>
+        <td>2.8</td>
+        <td>60</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>最佳实践</h2>
+  <ul>
+    <li>避免在事件循环中执行 CPU 密集型操作</li>
+    <li>使用 <code>Worker Threads</code> 处理计算密集任务</li>
+    <li>合理使用 <code>setImmediate()</code> 拆分长任务</li>
+    <li>监控事件循环延迟（Event Loop Lag）</li>
+    <li>使用 <code>async/await</code> 替代深层回调</li>
+  </ul>
+
+  <h2>总结</h2>
+  <p>理解事件循环对编写高性能的 Node.js 应用至关重要。通过合理利用异步机制，单线程的 Node.js 能够轻松处理数万并发连接，这也是它在 I/O 密集型应用中表现优异的根本原因。</p>
+
+  <p>更多内容请阅读：</p>
+  <ul>
+    <li><a href="/static/about">关于本站</a></li>
+    <li><a href="/blog">技术博客</a></li>
+  </ul>
+</article>

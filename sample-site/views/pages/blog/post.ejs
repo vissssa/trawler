@@ -1,0 +1,145 @@
+<article class="card">
+  <h1><%= post.title %></h1>
+  <p class="meta">
+    分类：<a href="/blog/category/<%= post.category %>"><span class="tag"><%= post.category %></span></a>
+    | 日期：<%= post.date %>
+  </p>
+
+  <% if (post.id === 1) { %>
+    <h2>装饰器（Decorators）正式稳定</h2>
+    <p>TypeScript 5.0 引入了与 TC39 Stage 3 提案对齐的装饰器实现。与之前的实验性装饰器不同，新版装饰器无需额外编译器标志即可使用。</p>
+    <pre><code>function logged(target: any, context: ClassMethodDecoratorContext) {
+  const methodName = String(context.name);
+  function replacementMethod(this: any, ...args: any[]) {
+    console.log(`调用 ${methodName}，参数:`, args);
+    return target.call(this, ...args);
+  }
+  return replacementMethod;
+}
+
+class Calculator {
+  @logged
+  add(a: number, b: number) {
+    return a + b;
+  }
+}</code></pre>
+    <h2>const 类型参数</h2>
+    <p>新增的 <code>const</code> 类型参数允许在推断时保留字面量类型，避免类型扩宽。</p>
+    <pre><code>function createConfig&lt;const T extends Record&lt;string, unknown&gt;&gt;(config: T): T {
+  return config;
+}
+
+// 类型为 { readonly host: "localhost"; readonly port: 3000 }
+const config = createConfig({ host: "localhost", port: 3000 });</code></pre>
+    <h2>枚举增强</h2>
+    <p>所有枚举现在都是联合枚举，支持更精确的类型窄化。枚举成员可以相互引用，计算成员也得到了更好的支持。</p>
+
+  <% } else if (post.id === 2) { %>
+    <h2>为什么选择 Docker？</h2>
+    <p>Docker 容器化技术通过将应用及其依赖打包成标准化的容器镜像，解决了"在我机器上能跑"的经典问题。容器具有轻量、快速启动和环境一致性等优势。</p>
+    <h2>多阶段构建最佳实践</h2>
+    <p>多阶段构建可以显著减小最终镜像体积：</p>
+    <pre><code># 阶段1：安装依赖
+FROM node:22-slim AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+# 阶段2：编译
+FROM node:22-slim AS builder
+WORKDIR /app
+COPY . .
+RUN npm ci && npm run build
+
+# 阶段3：运行时
+FROM node:22-slim
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+CMD ["node", "dist/index.js"]</code></pre>
+    <h2>健康检查与资源限制</h2>
+    <p>生产环境中应当配置健康检查和资源限制，确保容器的稳定运行。</p>
+
+  <% } else if (post.id === 3) { %>
+    <h2>缓存策略概览</h2>
+    <p>Redis 常用的缓存策略包括：Cache-Aside（旁路缓存）、Read-Through（读穿透）、Write-Through（写穿透）和 Write-Behind（写回）。</p>
+    <h2>Cache-Aside 模式</h2>
+    <p>这是最常用的缓存模式。读取时先查缓存，未命中则从数据库加载并回填缓存；写入时先更新数据库，再删除（而非更新）缓存。</p>
+    <pre><code>async function getUser(userId: string) {
+  // 1. 查缓存
+  const cached = await redis.get(`user:${userId}`);
+  if (cached) return JSON.parse(cached);
+
+  // 2. 缓存未命中，查数据库
+  const user = await db.collection('users').findOne({ _id: userId });
+  if (!user) return null;
+
+  // 3. 回填缓存，设置过期时间
+  await redis.set(`user:${userId}`, JSON.stringify(user), 'EX', 3600);
+  return user;
+}</code></pre>
+    <h2>缓存穿透与雪崩</h2>
+    <p>缓存穿透可通过布隆过滤器或缓存空值解决；缓存雪崩可通过随机化过期时间和多级缓存来预防。</p>
+
+  <% } else if (post.id === 4) { %>
+    <h2>核心概念</h2>
+    <p>Kubernetes（K8s）是容器编排平台，核心概念包括 Pod、Service、Deployment、ConfigMap 和 Secret。</p>
+    <h2>部署一个简单应用</h2>
+    <pre><code>apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+        - name: app
+          image: my-app:latest
+          ports:
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi</code></pre>
+    <h2>水平自动扩缩（HPA）</h2>
+    <p>HPA 可以根据 CPU、内存等指标自动调整 Pod 副本数，实现弹性伸缩。</p>
+
+  <% } else { %>
+    <h2>REST 的优势</h2>
+    <p>REST API 遵循 HTTP 语义，使用标准方法（GET/POST/PUT/DELETE），具有简单直观、缓存友好、生态成熟等优点。</p>
+    <h2>GraphQL 的优势</h2>
+    <p>GraphQL 允许客户端精确指定所需数据，避免过度获取（over-fetching）和不足获取（under-fetching），特别适合复杂的前端应用。</p>
+    <h2>如何选择？</h2>
+    <table>
+      <thead>
+        <tr><th>维度</th><th>REST</th><th>GraphQL</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>学习曲线</td><td>低</td><td>中等</td></tr>
+        <tr><td>缓存</td><td>HTTP 原生支持</td><td>需要额外配置</td></tr>
+        <tr><td>灵活性</td><td>固定响应结构</td><td>客户端自定义查询</td></tr>
+        <tr><td>文件上传</td><td>原生支持</td><td>需要额外处理</td></tr>
+      </tbody>
+    </table>
+  <% } %>
+</article>
+
+<div class="card">
+  <h3>相关文章</h3>
+  <ul>
+    <% related.forEach(r => { %>
+      <li><a href="/blog/post/<%= r.id %>"><%= r.title %></a> — <%= r.category %></li>
+    <% }); %>
+  </ul>
+  <p><a href="/blog">← 返回博客列表</a></p>
+</div>

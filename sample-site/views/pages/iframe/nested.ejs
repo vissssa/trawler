@@ -1,0 +1,24 @@
+<h1>iframe 嵌套测试</h1>
+<p>本页面通过 <code>&lt;iframe&gt;</code> 嵌入了其他页面的内容。爬虫通常只能获取到外层页面的 HTML，iframe 内部的内容需要额外处理。</p>
+
+<div class="card">
+  <h2>嵌入的内容页面</h2>
+  <p>以下 iframe 嵌入了一个独立的内容页面：</p>
+  <iframe src="/iframe/embed-content" width="100%" height="400" style="border: 2px solid #ddd; border-radius: 8px;" title="嵌入内容"></iframe>
+</div>
+
+<div class="card">
+  <h2>嵌入的静态文章</h2>
+  <p>以下 iframe 嵌入了"关于本站"页面：</p>
+  <iframe src="/static/about" width="100%" height="350" style="border: 2px solid #ddd; border-radius: 8px;" title="关于本站"></iframe>
+</div>
+
+<div class="card">
+  <h2>说明</h2>
+  <p>使用 Trawler 爬取本页面时：</p>
+  <ul>
+    <li>外层页面的 HTML 中只包含 <code>&lt;iframe&gt;</code> 标签</li>
+    <li>iframe 内部的实际内容不会出现在外层页面的 HTML 中</li>
+    <li>如果启用了递归爬取，iframe 的 <code>src</code> URL 可能会被发现并单独爬取</li>
+  </ul>
+</div>

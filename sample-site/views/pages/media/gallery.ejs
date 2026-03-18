@@ -1,0 +1,143 @@
+<h1>富媒体画廊</h1>
+<p>本页面包含多种媒体类型，用于测试 Trawler 对富媒体内容的爬取、HTML → Markdown 转换和截图能力。</p>
+
+<div class="card">
+  <h2>SVG 图形</h2>
+  <p>内联 SVG 矢量图形：</p>
+  <svg width="400" height="200" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+    <rect width="400" height="200" fill="#e3f2fd" rx="8"/>
+    <circle cx="80" cy="100" r="50" fill="#1976d2" opacity="0.8"/>
+    <circle cx="160" cy="100" r="50" fill="#42a5f5" opacity="0.8"/>
+    <circle cx="240" cy="100" r="50" fill="#90caf9" opacity="0.8"/>
+    <text x="320" y="105" font-size="14" fill="#333" text-anchor="middle">集合图</text>
+  </svg>
+</div>
+
+<div class="card">
+  <h2>图片展示</h2>
+  <p>使用占位图片服务展示不同尺寸的图片：</p>
+  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+    <div>
+      <img src="https://picsum.photos/seed/trawler1/300/200" alt="风景图片 1" style="border-radius: 8px; width: 100%;">
+      <p class="meta">300x200 风景照</p>
+    </div>
+    <div>
+      <img src="https://picsum.photos/seed/trawler2/300/200" alt="风景图片 2" style="border-radius: 8px; width: 100%;">
+      <p class="meta">300x200 风景照</p>
+    </div>
+    <div>
+      <img src="https://picsum.photos/seed/trawler3/300/200" alt="风景图片 3" style="border-radius: 8px; width: 100%;">
+      <p class="meta">300x200 风景照</p>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>视频嵌入</h2>
+  <p>使用 HTML5 <code>&lt;video&gt;</code> 标签嵌入视频（使用测试视频源）：</p>
+  <video controls width="100%" style="border-radius: 8px; background: #000;" poster="https://picsum.photos/seed/poster/800/450">
+    <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
+    您的浏览器不支持 video 标签。
+  </video>
+  <p class="meta">示例视频 — Big Buck Bunny 片段</p>
+</div>
+
+<div class="card">
+  <h2>音频播放器</h2>
+  <p>HTML5 音频元素：</p>
+  <audio controls style="width: 100%;">
+    <source src="https://www.w3schools.com/html/horse.mp3" type="audio/mpeg">
+    您的浏览器不支持 audio 标签。
+  </audio>
+  <p class="meta">示例音频文件</p>
+</div>
+
+<div class="card">
+  <h2>Canvas 绘图</h2>
+  <p>通过 JavaScript Canvas API 动态绘制的图形：</p>
+  <canvas id="myChart" width="600" height="300" style="max-width: 100%; border: 1px solid #eee; border-radius: 8px;"></canvas>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const canvas = document.getElementById('myChart');
+      const ctx = canvas.getContext('2d');
+
+      // 背景
+      ctx.fillStyle = '#fafafa';
+      ctx.fillRect(0, 0, 600, 300);
+
+      // 柱状图数据
+      const data = [65, 85, 45, 95, 70, 55, 80];
+      const labels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+      const colors = ['#1976d2', '#42a5f5', '#64b5f6', '#1565c0', '#1e88e5', '#2196f3', '#1976d2'];
+      const barWidth = 50;
+      const gap = 25;
+      const startX = 50;
+      const baseY = 260;
+
+      // Y 轴
+      ctx.strokeStyle = '#ccc';
+      ctx.beginPath();
+      ctx.moveTo(40, 20);
+      ctx.lineTo(40, baseY);
+      ctx.lineTo(580, baseY);
+      ctx.stroke();
+
+      // 绘制柱子
+      data.forEach((value, i) => {
+        const x = startX + i * (barWidth + gap);
+        const height = value * 2.2;
+        ctx.fillStyle = colors[i];
+        ctx.fillRect(x, baseY - height, barWidth, height);
+
+        // 数值
+        ctx.fillStyle = '#333';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(value, x + barWidth / 2, baseY - height - 5);
+
+        // 标签
+        ctx.fillText(labels[i], x + barWidth / 2, baseY + 18);
+      });
+
+      // 标题
+      ctx.fillStyle = '#333';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('每周访问量统计', 300, 295);
+    });
+  </script>
+  <p class="meta">Canvas 绘制的柱状图（JavaScript 动态渲染）</p>
+</div>
+
+<div class="card">
+  <h2>数学公式（纯 CSS）</h2>
+  <p>虽然不使用 MathJax/KaTeX，但以下是用 HTML 表示的常见数学公式：</p>
+  <blockquote>
+    <p>欧拉公式：e<sup>iπ</sup> + 1 = 0</p>
+    <p>二次方程求根公式：x = (-b ± √(b² - 4ac)) / 2a</p>
+    <p>自然对数的底：e = lim<sub>n→∞</sub> (1 + 1/n)<sup>n</sup> ≈ 2.71828</p>
+  </blockquote>
+</div>
+
+<div class="card">
+  <h2>表格数据</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>排名</th>
+        <th>编程语言</th>
+        <th>市场份额</th>
+        <th>趋势</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>Python</td><td>28.5%</td><td>↑ 上升</td></tr>
+      <tr><td>2</td><td>JavaScript</td><td>17.2%</td><td>→ 稳定</td></tr>
+      <tr><td>3</td><td>Java</td><td>13.8%</td><td>↓ 下降</td></tr>
+      <tr><td>4</td><td>TypeScript</td><td>8.6%</td><td>↑ 上升</td></tr>
+      <tr><td>5</td><td>C/C++</td><td>7.9%</td><td>→ 稳定</td></tr>
+      <tr><td>6</td><td>Go</td><td>5.4%</td><td>↑ 上升</td></tr>
+      <tr><td>7</td><td>Rust</td><td>3.2%</td><td>↑ 上升</td></tr>
+    </tbody>
+  </table>
+</div>

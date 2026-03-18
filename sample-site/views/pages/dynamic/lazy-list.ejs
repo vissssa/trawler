@@ -1,0 +1,45 @@
+<h1>延迟加载列表</h1>
+<p>本页面的名言列表通过 <code>setTimeout</code> 分批加载，模拟渐进式内容渲染。整个加载过程约需 3 秒。</p>
+
+<div id="quote-list" class="card">
+  <h2>经典名言</h2>
+  <p id="status">正在加载第 1 批内容...</p>
+  <ul id="quotes"></ul>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const quotesEl = document.getElementById('quotes');
+    const statusEl = document.getElementById('status');
+
+    const allQuotes = [
+      { text: '学而不思则罔，思而不学则殆。', author: '孔子' },
+      { text: '千里之行，始于足下。', author: '老子' },
+      { text: '知之为知之，不知为不知，是知也。', author: '孔子' },
+      { text: '天行健，君子以自强不息。', author: '《周易》' },
+      { text: '路漫漫其修远兮，吾将上下而求索。', author: '屈原' },
+      { text: '不积跬步，无以至千里。', author: '荀子' },
+      { text: '工欲善其事，必先利其器。', author: '孔子' },
+      { text: '三人行，必有我师焉。', author: '孔子' },
+    ];
+
+    function renderBatch(startIdx, batchSize, batchNum) {
+      const batch = allQuotes.slice(startIdx, startIdx + batchSize);
+      batch.forEach(q => {
+        const li = document.createElement('li');
+        li.innerHTML = `<strong>"${q.text}"</strong> — ${q.author}`;
+        quotesEl.appendChild(li);
+      });
+
+      const nextStart = startIdx + batchSize;
+      if (nextStart < allQuotes.length) {
+        statusEl.textContent = `正在加载第 ${batchNum + 1} 批内容...`;
+        setTimeout(() => renderBatch(nextStart, batchSize, batchNum + 1), 1000);
+      } else {
+        statusEl.textContent = `加载完成，共 ${allQuotes.length} 条名言。`;
+      }
+    }
+
+    setTimeout(() => renderBatch(0, 3, 1), 500);
+  });
+</script>
